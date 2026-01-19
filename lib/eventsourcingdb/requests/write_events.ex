@@ -1,7 +1,7 @@
-defmodule EventSourcingDB.Requests.WriteEvents do
-  alias EventSourcingDB.Events.Event
-  alias EventSourcingDB.OneShotRequest
-  alias EventSourcingDB.Endpoint
+defmodule Eventscourcingdb.Requests.WriteEvents do
+  alias Eventscourcingdb.Events.Event
+  alias Eventscourcingdb.OneShotRequest
+  alias Eventscourcingdb.Endpoint
   @behaviour Endpoint
   @behaviour OneShotRequest
 

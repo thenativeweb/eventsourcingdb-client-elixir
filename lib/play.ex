@@ -1,9 +1,9 @@
 defmodule Play do
-  alias EventSourcingDB.Preconditions.IsSubjectPristine
-  alias EventSourcingDB.Events.EventCandidate
-  import EventSourcingDB
+  alias Eventscourcingdb.Preconditions.IsSubjectPristine
+  alias Eventscourcingdb.Events.EventCandidate
+  import Eventscourcingdb
 
-  @client EventSourcingDB.Client.new(
+  @client Eventscourcingdb.Client.new(
             api_token: "LuD3fBJCZF@q&%w4bJ&R",
             base_url: "http://localhost:3001"
           )

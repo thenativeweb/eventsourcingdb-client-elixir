@@ -1,3 +1,3 @@
-defmodule EventSourcingDB.Events.ManagementEvent do
+defmodule Eventscourcingdb.Events.ManagementEvent do
   defstruct [:data, :datacontenttype, :id, :source, :specversion, :subject, :time, :type]
 end

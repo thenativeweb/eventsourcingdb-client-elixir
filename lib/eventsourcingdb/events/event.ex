@@ -1,4 +1,4 @@
-defmodule EventSourcingDB.Events.Event do
+defmodule Eventscourcingdb.Events.Event do
   defstruct [
     :data,
     :datacontenttype,

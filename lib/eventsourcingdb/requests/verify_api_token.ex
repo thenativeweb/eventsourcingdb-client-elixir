@@ -1,6 +1,6 @@
-defmodule EventSourcingDB.Requests.VerifyApiToken do
-  alias EventSourcingDB.OneShotRequest
-  alias EventSourcingDB.Endpoint
+defmodule Eventscourcingdb.Requests.VerifyApiToken do
+  alias Eventscourcingdb.OneShotRequest
+  alias Eventscourcingdb.Endpoint
   @behaviour Endpoint
   @behaviour OneShotRequest
 

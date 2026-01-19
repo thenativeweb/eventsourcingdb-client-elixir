@@ -1,6 +1,6 @@
-defmodule EventSourcingDB.Requests.ReadEventType do
-  alias EventSourcingDB.OneShotRequest
-  alias EventSourcingDB.Endpoint
+defmodule Eventscourcingdb.Requests.ReadEventType do
+  alias Eventscourcingdb.OneShotRequest
+  alias Eventscourcingdb.Endpoint
   @behaviour Endpoint
   @behaviour OneShotRequest
 

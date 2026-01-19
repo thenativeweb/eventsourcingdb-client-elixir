@@ -1,6 +1,6 @@
-defmodule EventSourcingDB.Requests.Ping do
-  alias EventSourcingDB.OneShotRequest
-  alias EventSourcingDB.Endpoint
+defmodule Eventscourcingdb.Requests.Ping do
+  alias Eventscourcingdb.OneShotRequest
+  alias Eventscourcingdb.Endpoint
   @behaviour Endpoint
   @behaviour OneShotRequest
 

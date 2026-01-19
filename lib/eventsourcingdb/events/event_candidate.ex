@@ -1,4 +1,4 @@
-defmodule EventSourcingDB.Events.EventCandidate do
+defmodule Eventscourcingdb.Events.EventCandidate do
   @type t() :: %__MODULE__{
           data: map(),
           source: String.t(),
@@ -14,7 +14,7 @@ defmodule EventSourcingDB.Events.EventCandidate do
   ]
 end
 
-defimpl Jason.Encoder, for: EventSourcingDB.Events.EventCandidate do
+defimpl Jason.Encoder, for: Eventscourcingdb.Events.EventCandidate do
   def encode(value, opts) do
     Jason.Encode.map(Map.from_struct(value), opts)
   end
