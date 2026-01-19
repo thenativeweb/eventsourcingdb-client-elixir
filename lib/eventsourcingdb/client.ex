@@ -1,4 +1,4 @@
-defmodule Eventsourcingdb.Client do
+defmodule EventSourcingDB.Client do
   @type t() :: %__MODULE__{
           api_token: String.t(),
           base_url: String.t()

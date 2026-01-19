@@ -2,51 +2,57 @@ defmodule EventSourcingDB do
   @moduledoc """
   Documentation for `Eventsourcingdb`.
   """
-  alias EventSourcingDB.Requests.{VerifyApiToken, Ping, ReadEventType}
+  alias EventSourcingDB.Requests.{VerifyApiToken, Ping, ReadEventType, WriteEvents}
 
-  def play() do
-    client =
-      Eventsourcingdb.Client.new(
-        api_token: "LuD3fBJCZF@q&%w4bJ&R",
-        base_url: "http://localhost:3001"
-      )
-
-    ping(client) |> IO.inspect(label: "ping")
-    verify_api_token(client) |> IO.inspect(label: "verify_api_token")
-  end
-
-  @spec build_request(
-          Eventsourcingdb.Client.t(),
-          module(),
-          any()
-        ) :: Req.Request.t()
-  defp build_request(client, request_module, body) do
+  @spec build_request(EventSourcingDB.Client.t()) :: Req.Request.t()
+  defp build_request(client) do
     Req.new(
-      method: request_module.method(),
-      url: URI.merge(client.base_url, request_module.path()),
-      json: Jason,
+      base_url: client.base_url,
       headers: [{"Content-Type", "application/json"}],
-      auth: {:bearer, client.api_token},
-      body: body
+      auth: {:bearer, client.api_token}
     )
   end
 
-  defp handle_response({:ok, %{status: 200, body: body}}, validate_func) do
+  @spec validate_server_headers({:ok, Req.Response.t()}) ::
+          {:ok} | {:error, :invalid_server_header}
+  defp validate_server_headers({:ok, response}) do
+    case response
+         |> Req.Response.get_header("Server")
+         |> Enum.any?(fn val -> String.starts_with?(val, "EventSourcingDB/") end) do
+      true -> {:ok}
+      false -> {:error, :invalid_server_header}
+    end
+  end
+
+  defp validate_response({:ok, %{status: 200, body: body}}) do
+    {:ok, body}
+  end
+
+  defp validate_response({:ok, %{body: body}}) do
+    {:error, :api_error, body}
+  end
+
+  defp validate_response({:error, reason}) do
+    {:error, :api_error, reason}
+  end
+
+  defp validate_payload(body, validate_func) do
     validate_func.(body)
   end
 
-  defp handle_response({:ok, %{status: status}}, _validate_func),
-    do: {:error, "Unexpected status: #{status}"}
-
-  defp handle_response({:error, reason}, _validate_func), do: {:error, reason}
-
   defp one_shot(client, request_module, body \\ nil) do
-    client
-    |> build_request(request_module, body)
-    # |> IO.inspect(label: "request")
-    |> Req.request()
-    # |> IO.inspect(label: "response")
-    |> handle_response(&request_module.validate_response/1)
+    response =
+      client
+      |> build_request()
+      |> IO.inspect(label: "request")
+      |> Req.request(url: request_module.path(), method: request_module.method(), json: body)
+      |> IO.inspect(label: "response")
+
+    with {:ok, body} <- validate_response(response),
+         {:ok} <- validate_server_headers(response),
+         {:ok, data} <- validate_payload(body, &request_module.validate_response/1) do
+      {:ok, data}
+    end
   end
 
   def ping(client) do
@@ -59,5 +65,16 @@ defmodule EventSourcingDB do
 
   def read_event_type(client, event_type) do
     one_shot(client, ReadEventType, %{"eventType" => event_type})
+  end
+
+  @spec write_event(EventSourcingDB.Client.t(), EventSourcingDB.Events.EventCandidate.t()) ::
+          any()
+  def write_event(client, event, preconditions \\ []) do
+    write_events(client, [event], preconditions)
+  end
+
+  @spec write_events(EventSourcingDB.Client.t(), maybe_improper_list(), any()) :: any()
+  def write_events(client, events, preconditions \\ []) when is_list(events) do
+    one_shot(client, WriteEvents, %{"events" => events, "preconditions" => preconditions})
   end
 end
