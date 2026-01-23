@@ -11,6 +11,9 @@ defmodule Eventscourcingdb.Requests.VerifyApiToken do
   def path(), do: "/api/v1/verify-api-token"
 
   @impl OneShotRequest
-  def validate_response(%{"type" => "io.eventsourcingdb.api.api-token-verified"}), do: {:ok, nil}
-  def validate_response(_body), do: {:error, :api_token_invalid}
+  def validate_response({:ok, %{status: 401}}), do: {:error, :api_token_invalid}
+  def validate_response(_response), do: :ok
+
+  @impl OneShotRequest
+  def validate_body(%{"type" => "io.eventsourcingdb.api.api-token-verified"}), do: {:ok, nil}
 end

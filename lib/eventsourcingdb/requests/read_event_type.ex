@@ -11,5 +11,8 @@ defmodule Eventscourcingdb.Requests.ReadEventType do
   def path(), do: "/api/v1/read-event-type"
 
   @impl OneShotRequest
-  def validate_response(_response), do: {:ok, nil}
+  def validate_response(_response), do: :ok
+
+  @impl OneShotRequest
+  def validate_body(_payload), do: {:ok, nil}
 end

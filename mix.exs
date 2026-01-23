@@ -23,7 +23,9 @@ defmodule Eventsourcingdb.MixProject do
   defp deps do
     [
       {:req, "~> 0.5.16"},
-      {:jason, "~> 1.2"}
+      {:jason, "~> 1.2"},
+      # {:testcontainers, "~> 1.13", only: [:test, :dev]}
+      {:testcontainers, path: "../testcontainers-elixir", only: [:test, :dev]}
     ]
   end
 

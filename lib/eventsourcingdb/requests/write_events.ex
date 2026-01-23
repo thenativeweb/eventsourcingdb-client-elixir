@@ -12,7 +12,10 @@ defmodule Eventscourcingdb.Requests.WriteEvents do
   def path(), do: "/api/v1/write-events"
 
   @impl OneShotRequest
-  def validate_response(response) do
-    {:ok, Enum.map(response, fn ev -> Event.new(ev) end)}
+  def validate_response(_response), do: :ok
+
+  @impl OneShotRequest
+  def validate_body(payload) do
+    {:ok, Enum.map(payload, fn ev -> Event.new(ev) end)}
   end
 end
