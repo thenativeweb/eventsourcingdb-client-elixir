@@ -1,21 +1,32 @@
-defmodule Eventscourcingdb.Requests.WriteEvents do
-  alias Eventscourcingdb.Events.Event
-  alias Eventscourcingdb.OneShotRequest
-  alias Eventscourcingdb.Endpoint
-  @behaviour Endpoint
-  @behaviour OneShotRequest
+defmodule Eventsourcingdb.Requests.WriteEvents do
+  alias Eventsourcingdb.{OneShotRequest, Endpoint, Events.Event}
 
-  @impl Endpoint
-  def method(), do: :post
+  use Endpoint
+  use OneShotRequest
+  use TypedStruct
 
-  @impl Endpoint
-  def path(), do: "/api/v1/write-events"
+  method :post
+  path "/api/v1/write-events"
 
-  @impl OneShotRequest
-  def validate_response(_response), do: :ok
+  typedstruct do
+    field :events, Eventsourcingdb.Events.EventCandidate.t()
+    field :preconditions, any(), default: []
+  end
 
-  @impl OneShotRequest
+  def new(events, preconditions \\ []) do
+    struct!(__MODULE__, events: events, preconditions: preconditions)
+  end
+
   def validate_body(payload) do
     {:ok, Enum.map(payload, fn ev -> Event.new(ev) end)}
+  end
+
+  defimpl Jason.Encoder do
+    def encode(value, opts) do
+      Jason.Encode.map(
+        %{"events" => value.events, "preconditions" => value.preconditions},
+        opts
+      )
+    end
   end
 end

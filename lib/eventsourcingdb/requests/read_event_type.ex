@@ -1,18 +1,25 @@
-defmodule Eventscourcingdb.Requests.ReadEventType do
-  alias Eventscourcingdb.OneShotRequest
-  alias Eventscourcingdb.Endpoint
-  @behaviour Endpoint
-  @behaviour OneShotRequest
+defmodule Eventsourcingdb.Requests.ReadEventType do
+  alias Eventsourcingdb.{OneShotRequest, Endpoint}
 
-  @impl Endpoint
-  def method(), do: :post
+  use Endpoint
+  use OneShotRequest
+  use TypedStruct
 
-  @impl Endpoint
-  def path(), do: "/api/v1/read-event-type"
+  method :post
+  path "/api/v1/read-event-type"
 
-  @impl OneShotRequest
-  def validate_response(_response), do: :ok
+  typedstruct do
+    field :event_type, String.t(), enforce: true
+  end
 
-  @impl OneShotRequest
-  def validate_body(_payload), do: {:ok, nil}
+  @spec new(String.t()) :: struct()
+  def new(event_type) do
+    struct!(__MODULE__, event_type: event_type)
+  end
+
+  defimpl Jason.Encoder do
+    def encode(value, opts) do
+      Jason.Encode.map(%{"eventType" => value.event_type}, opts)
+    end
+  end
 end

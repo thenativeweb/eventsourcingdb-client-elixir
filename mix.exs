@@ -24,6 +24,7 @@ defmodule Eventsourcingdb.MixProject do
     [
       {:req, "~> 0.5.16"},
       {:jason, "~> 1.2"},
+      {:typedstruct, "~> 0.5"},
       # {:testcontainers, "~> 1.13", only: [:test, :dev]}
       {:testcontainers, path: "../testcontainers-elixir", only: [:test, :dev]}
     ]

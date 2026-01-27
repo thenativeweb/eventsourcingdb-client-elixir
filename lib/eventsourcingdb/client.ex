@@ -1,4 +1,4 @@
-defmodule Eventscourcingdb.Client do
+defmodule Eventsourcingdb.Client do
   @typedoc """
   EventSourcingDB Client
 

@@ -1,5 +1,5 @@
 defmodule Eventsourcingdb.TestContainer do
-  alias Eventscourcingdb.Client
+  alias Eventsourcingdb.Client
   alias Testcontainers.ContainerBuilder
   alias Testcontainers.Container
 
@@ -65,7 +65,7 @@ defmodule Eventsourcingdb.TestContainer do
   end
 
   defimpl ContainerBuilder do
-    alias Eventscourcingdb.Client
+    alias Eventsourcingdb.Client
 
     import Container
 

@@ -1,9 +1,9 @@
 defmodule Play do
-  alias Eventscourcingdb.Preconditions.IsSubjectPristine
-  alias Eventscourcingdb.Events.EventCandidate
-  import Eventscourcingdb
+  alias Eventsourcingdb.Preconditions.IsSubjectPristine
+  alias Eventsourcingdb.Events.EventCandidate
+  import Eventsourcingdb
 
-  @client Eventscourcingdb.Client.new(
+  @client Eventsourcingdb.Client.new(
             api_token: "LuD3fBJCZF@q&%w4bJ&R",
             base_url: "http://localhost:3001"
           )
@@ -20,7 +20,7 @@ defmodule Play do
       @client,
       %EventCandidate{
         type: "io.eventsourcingdb.library.book-acquired",
-        subject: "/books/43",
+        subject: "/books/44",
         source: "https://library.eventsourcingdb.io",
         data: %{
           title: "2001 – A Space Odyssey",
@@ -30,5 +30,10 @@ defmodule Play do
       },
       [%IsSubjectPristine{subject: "/books/43"}]
     )
+  end
+
+  def read_books() do
+    stream = read_events(@client, "/books")
+    Enum.each(stream, fn item -> IO.inspect(item, label: "event") end)
   end
 end
