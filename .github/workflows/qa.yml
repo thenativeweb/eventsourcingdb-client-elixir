@@ -7,10 +7,10 @@ name: QA
 
 on:
   workflow_dispatch:
-  # pull_request:
-  # push:
-  #   branches:
-  #     - main
+  pull_request:
+  push:
+    branches:
+      - main
 
 jobs:
   test:
