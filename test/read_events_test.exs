@@ -1,4 +1,5 @@
 defmodule EventsourcingdbTest.ReadEvents do
+  alias Eventsourcingdb.Requests.ReadEvents.BoundOptions
   alias Eventsourcingdb.Requests.ReadEvents.FromLatestEventOptions
   alias Eventsourcingdb.Requests.ReadEvents.ReadEventsOptions
   alias Eventsourcingdb.TestContainer
@@ -98,7 +99,7 @@ defmodule EventsourcingdbTest.ReadEvents do
     assert events == written
   end
 
-  test "read antichronological", %{esdb: esdb} do
+  test "read anti-chronological", %{esdb: esdb} do
     client = TestContainer.get_client(esdb)
 
     event_candidates = create_numbered_eventcandidates(10)
@@ -109,6 +110,48 @@ defmodule EventsourcingdbTest.ReadEvents do
     events = Eventsourcingdb.read_events(client, "/test") |> Enum.to_list() |> Enum.reverse()
 
     assert events != written
+  end
+
+  test "reads with lower bound", %{esdb: esdb} do
+    client = TestContainer.get_client(esdb)
+
+    first_event = create_test_eventcandidate("/test", %{"value" => 23})
+    second_event = create_test_eventcandidate("/test", %{"value" => 42})
+
+    Eventsourcingdb.write_events!(client, [first_event, second_event])
+
+    events =
+      Eventsourcingdb.read_events(client, "/test", %ReadEventsOptions{
+        lower_bound: %BoundOptions{
+          id: "1",
+          type: :inclusive
+        },
+        recursive: false
+      })
+
+    assert Enum.count(events) == 1
+    assert Enum.at(events, 0).data["value"] == 42
+  end
+
+  test "reads with upper bound", %{esdb: esdb} do
+    client = TestContainer.get_client(esdb)
+
+    first_event = create_test_eventcandidate("/test", %{"value" => 23})
+    second_event = create_test_eventcandidate("/test", %{"value" => 42})
+
+    Eventsourcingdb.write_events!(client, [first_event, second_event])
+
+    events =
+      Eventsourcingdb.read_events(client, "/test", %ReadEventsOptions{
+        upper_bound: %BoundOptions{
+          id: "0",
+          type: :inclusive
+        },
+        recursive: false
+      })
+
+    assert Enum.count(events) == 1
+    assert Enum.at(events, 0).data["value"] == 23
   end
 
   test "read everything from missing latest event", %{esdb: esdb} do
