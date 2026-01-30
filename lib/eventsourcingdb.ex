@@ -2,6 +2,7 @@ defmodule Eventsourcingdb do
   @moduledoc """
   Documentation for `Eventsourcingdb`.
   """
+  alias Eventsourcingdb.Events.Event
   alias Eventsourcingdb.Requests.{VerifyApiToken, Ping, ReadEventType, WriteEvents, ReadEvents}
 
   #
@@ -41,15 +42,19 @@ defmodule Eventsourcingdb do
     request_one_shot(client, ReadEventType.new(event_type))
   end
 
-  @spec write_event(Eventsourcingdb.Client.t(), Eventsourcingdb.Events.EventCandidate.t()) ::
-          any()
-  def write_event(client, event, preconditions \\ []) do
-    write_events(client, [event], preconditions)
-  end
-
-  @spec write_events(Eventsourcingdb.Client.t(), maybe_improper_list(), any()) :: any()
+  @spec write_events(Eventsourcingdb.Client.t(), maybe_improper_list(), any()) ::
+          {:ok, [Event.t()]} | {:error, String.t()}
   def write_events(client, events, preconditions \\ []) when is_list(events) do
     request_one_shot(client, WriteEvents.new(events, preconditions))
+  end
+
+  @spec write_events!(Eventsourcingdb.Client.t(), maybe_improper_list(), any()) :: [Event.t()]
+  def write_events!(client, events, preconditions \\ []) when is_list(events) do
+    request_one_shot!(client, WriteEvents.new(events, preconditions))
+  end
+
+  def read_events(client, subject, options) do
+    request_stream(client, ReadEvents.new(subject, options))
   end
 
   def read_events(client, subject) do
@@ -60,12 +65,14 @@ defmodule Eventsourcingdb do
   # region Requests
   #
 
-  defp request_stream(client, request_module) do
+  defp request_stream(client, request) do
+    request_module = get_request_module(request)
+
     Stream.resource(
       fn ->
         response =
           client
-          |> build_request(request_module)
+          |> build_request(request)
           |> Req.request(into: :self)
 
         with {:ok} <- validate_transmission(response),
@@ -83,7 +90,50 @@ defmodule Eventsourcingdb do
                  end
                ) do
             {:ok, [data: chunk]} ->
-              {[Jason.decode!(chunk)], response}
+              json = Jason.decode(chunk)
+              expected_type = request_module.type()
+
+              # evaluate message
+              result =
+                case json do
+                  {:ok, %{"type" => type, "payload" => payload}} ->
+                    case type do
+                      # This is the expected type, so we try to parse it.
+                      ^expected_type ->
+                        {:ok, request_module.process(payload)}
+
+                      # Forward Errors from the DB as :db_error
+                      "error" ->
+                        {:error, :db_error, payload}
+
+                      # Ignore heartbeat messages.
+                      "heartbeat" ->
+                        nil
+
+                      other ->
+                        {:error, :invalid_response_type,
+                         "Expected type \"#{expected_type}\", but got \"#{other}\""}
+                    end
+
+                  {:error, reason} ->
+                    {:error, reason}
+                end
+
+              # process the evaluated result
+              case result do
+                # push forward into the consumer stream
+                {:ok, message} ->
+                  {[message], response}
+
+                # do the whoopsie
+                {:error, reason} ->
+                  {:error, reason}
+
+                  # nil -> do nothing whin its nil
+              end
+
+            {:error, reason} ->
+              {:error, reason}
 
             # This is returned when the stream is done.
             {:ok, [:done]} ->
@@ -120,7 +170,7 @@ defmodule Eventsourcingdb do
     result =
       with {:ok} <- validate_transmission(response),
            {:ok} <- validate_server_headers(response),
-           {:ok} <- validate_request_response(response, request_module),
+           :ok <- validate_request_response(response, request_module),
            {:ok, resp} <- validate_response(response),
            {:ok, data} <- validate_request_body(resp.body, request_module) do
         {:ok, data}
@@ -129,6 +179,16 @@ defmodule Eventsourcingdb do
     case result do
       {:ok, nil} -> :ok
       _ -> result
+    end
+  end
+
+  @spec request_one_shot!(Eventsourcingdb.Client.t(), struct()) :: any()
+  defp request_one_shot!(client, request) do
+    result = request_one_shot(client, request)
+
+    case result do
+      {:ok, data} -> data
+      {:error, reason} -> raise(reason)
     end
   end
 
@@ -214,12 +274,7 @@ defmodule Eventsourcingdb do
   end
 
   defp validate_request_response(response, request_module) do
-    result = request_module.validate_response(response)
-
-    case result do
-      :ok -> {:ok, nil}
-      _ -> result
-    end
+    request_module.validate_response(response)
   end
 
   defp validate_request_body(body, request_module) do

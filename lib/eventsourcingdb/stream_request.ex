@@ -2,11 +2,17 @@ defmodule Eventsourcingdb.StreamRequest do
   alias Eventsourcingdb.StreamRequest
 
   @callback type() :: String.t()
+  @callback process(map()) :: map()
 
   defmacro __using__(_opts) do
     quote do
       @behaviour StreamRequest
       import StreamRequest
+
+      @impl StreamRequest
+      def process(data), do: data
+
+      defoverridable(process: 1)
     end
   end
 

@@ -1,4 +1,4 @@
-defmodule EventsourcingdbTest do
+defmodule EventsourcingdbTest.Essentials do
   alias Eventscourcingdb.Client
   alias Eventsourcingdb.TestContainer
   use ExUnit.Case
