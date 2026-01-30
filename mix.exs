@@ -25,6 +25,7 @@ defmodule Eventsourcingdb.MixProject do
       {:req, "~> 0.5.16"},
       {:jason, "~> 1.2"},
       {:typedstruct, "~> 0.5"},
+      # See: https://github.com/thenativeweb/eventsourcingdb-client-elixir/issues/2
       # {:testcontainers, "~> 1.13", only: [:test, :dev]}
       {
         :testcontainers,
