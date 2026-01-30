@@ -26,7 +26,12 @@ defmodule Eventsourcingdb.MixProject do
       {:jason, "~> 1.2"},
       {:typedstruct, "~> 0.5"},
       # {:testcontainers, "~> 1.13", only: [:test, :dev]}
-      {:testcontainers, path: "../testcontainers-elixir", only: [:test, :dev]}
+      {
+        :testcontainers,
+        github: "gossi/testcontainers-elixir",
+        branch: "respect-ryuk-disable-env",
+        only: [:test, :dev]
+      }
     ]
   end
 
