@@ -8,9 +8,13 @@ defmodule Eventsourcingdb.MixProject do
       elixir: "~> 1.19",
       start_permanent: Mix.env() == :prod,
       aliases: aliases(),
-      deps: deps()
+      deps: deps(),
+      elixirc_paths: elixirc_paths(Mix.env())
     ]
   end
+
+  defp elixirc_paths(:prod), do: ["lib"]
+  defp elixirc_paths(_), do: ["lib", "test/support"]
 
   # Run "mix help compile.app" to learn about applications.
   def application do
