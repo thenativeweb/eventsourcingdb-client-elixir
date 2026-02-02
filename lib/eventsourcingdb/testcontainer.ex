@@ -58,6 +58,8 @@ defmodule Eventsourcingdb.TestContainer do
   def get_api_token(%Container{} = container), do: container.environment[:ESDB_API_TOKEN]
 
   def get_client(%Container{} = container) do
+    IO.inspect(get_base_url(container), label: "Client base url")
+
     Client.new(
       base_url: get_base_url(container),
       api_token: get_api_token(container)
