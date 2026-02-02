@@ -67,6 +67,7 @@ defmodule Eventsourcingdb.TestContainer do
   end
 
   defimpl ContainerBuilder do
+    alias Eventsourcingdb.HttpWaitStrategy
     alias Eventsourcingdb.Client
 
     import Container
@@ -78,6 +79,7 @@ defmodule Eventsourcingdb.TestContainer do
       new("#{@image_name}:#{builder.image_tag}")
       |> with_exposed_port(builder.port)
       |> with_environment(:ESDB_API_TOKEN, builder.api_token)
+      |> with_waiting_strategy(HttpWaitStrategy.new("/api/v1/ping", timeout: 10000))
       |> with_cmd([
         "run",
         "--api-token",
