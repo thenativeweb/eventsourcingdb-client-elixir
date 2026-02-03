@@ -8,7 +8,6 @@ defmodule EventsourcingdbTest.Essentials do
   container(:esdb, TestContainer.new(), shared: true)
 
   test "ping", %{esdb: esdb} do
-    IO.inspect(TestContainer.get_base_url(esdb), label: "container base url")
     assert Eventsourcingdb.ping(TestContainer.get_client(esdb)) == :ok
   end
 

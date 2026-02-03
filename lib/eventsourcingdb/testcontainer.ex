@@ -36,7 +36,7 @@ defmodule Eventsourcingdb.TestContainer do
   Returns the port on the _host machine_ where the EventSourcingDB container is listening.
   """
   def get_mapped_port(%Container{} = container),
-    do: Container.mapped_port(container, @default_port)
+    do: Container.mapped_port(container, String.to_integer(container.environment[:ESDB_PORT]))
 
   @doc """
   Generates the base_url for accessing the EventSourcingDB service running within the container.
@@ -58,8 +58,6 @@ defmodule Eventsourcingdb.TestContainer do
   def get_api_token(%Container{} = container), do: container.environment[:ESDB_API_TOKEN]
 
   def get_client(%Container{} = container) do
-    IO.inspect(get_base_url(container), label: "Client base url")
-
     Client.new(
       base_url: get_base_url(container),
       api_token: get_api_token(container)
@@ -78,8 +76,14 @@ defmodule Eventsourcingdb.TestContainer do
     def build(builder) do
       new("#{@image_name}:#{builder.image_tag}")
       |> with_exposed_port(builder.port)
+      |> with_environment(:ESDB_PORT, Integer.to_string(builder.port))
       |> with_environment(:ESDB_API_TOKEN, builder.api_token)
-      |> with_waiting_strategy(HttpWaitStrategy.new("/api/v1/ping", timeout: 10000))
+      |> with_waiting_strategy(
+        HttpWaitStrategy.new("/api/v1/ping", builder.port,
+          timeout: 10000,
+          status_code: 200
+        )
+      )
       |> with_cmd([
         "run",
         "--api-token",

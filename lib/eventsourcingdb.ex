@@ -75,8 +75,6 @@ defmodule Eventsourcingdb do
           |> build_request(request)
           |> Req.request(into: :self)
 
-        IO.inspect(response, label: "request_streaming #{request_module.path()}")
-
         with {:ok} <- validate_transmission(response),
              {:ok} <- validate_server_headers(response),
              {:ok, resp} <- validate_response(response) do
@@ -168,8 +166,6 @@ defmodule Eventsourcingdb do
       client
       |> build_request(request)
       |> Req.request()
-
-    IO.inspect(response, label: "request_one_shot #{request_module.path()}")
 
     result =
       with {:ok} <- validate_transmission(response),
