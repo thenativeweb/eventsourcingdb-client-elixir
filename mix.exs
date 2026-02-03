@@ -8,9 +8,13 @@ defmodule Eventsourcingdb.MixProject do
       elixir: "~> 1.19",
       start_permanent: Mix.env() == :prod,
       aliases: aliases(),
-      deps: deps()
+      deps: deps(),
+      elixirc_paths: elixirc_paths(Mix.env())
     ]
   end
+
+  defp elixirc_paths(:prod), do: ["lib"]
+  defp elixirc_paths(_), do: ["lib", "test/support"]
 
   # Run "mix help compile.app" to learn about applications.
   def application do
@@ -25,14 +29,7 @@ defmodule Eventsourcingdb.MixProject do
       {:req, "~> 0.5.16"},
       {:jason, "~> 1.2"},
       {:typedstruct, "~> 0.5"},
-      # See: https://github.com/thenativeweb/eventsourcingdb-client-elixir/issues/2
-      # {:testcontainers, "~> 1.13", only: [:test, :dev]}
-      {
-        :testcontainers,
-        github: "gossi/testcontainers-elixir",
-        branch: "respect-ryuk-disable-env",
-        only: [:test, :dev]
-      }
+      {:testcontainers, "~> 1.14.1", only: [:test, :dev]}
     ]
   end
 

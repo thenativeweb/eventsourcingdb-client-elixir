@@ -21,8 +21,8 @@ defmodule EventsourcingdbTest.Utils do
   def assert_event_match_eventcandidate(
         event,
         candidate,
-        previous_event_hash,
-        expected_id
+        _previous_event_hash,
+        _expected_id
       ) do
     # check content
     assert event.data == candidate.data, "Data mismatch"
