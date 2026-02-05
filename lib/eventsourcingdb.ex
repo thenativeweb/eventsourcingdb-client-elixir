@@ -217,7 +217,7 @@ defmodule Eventsourcingdb do
         url: request_module.path()
       ]
       |> Keyword.merge(build_body_opts(request))
-      |> Keyword.merge(optional_fields_keyword(client))
+      |> Keyword.merge(client.req_options)
 
     Req.new(opts)
     # |> Req.Request.append_request_steps(inspect: &IO.inspect/1)
@@ -240,17 +240,6 @@ defmodule Eventsourcingdb do
     else
       []
     end
-  end
-
-  defp optional_fields_keyword(struct) when is_map(struct) do
-    # this is stupid, as it is copied from client - hmm?
-    enforced = [:api_token, :base_url]
-
-    struct
-    |> Map.from_struct()
-    |> Enum.reject(fn {k, _v} -> k in enforced end)
-    |> Enum.filter(fn {_k, v} -> not is_nil(v) end)
-    |> Enum.into([])
   end
 
   #
