@@ -111,7 +111,6 @@ defmodule Eventsourcingdb do
           {:ok, message} ->
             {[message], response}
 
-          # handle errors with the message
           {:error, reason} ->
             {:error, reason}
 
