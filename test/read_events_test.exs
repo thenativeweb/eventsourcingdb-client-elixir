@@ -13,7 +13,7 @@ defmodule EventsourcingdbTest.ReadEvents do
   test "make read call", %{esdb: esdb} do
     events = TestContainer.get_client(esdb) |> Eventsourcingdb.read_events("/")
 
-    assert Enum.count(events) == 0
+    assert Enum.empty?(events)
   end
 
   test "make read call with event", %{esdb: esdb} do
@@ -170,7 +170,7 @@ defmodule EventsourcingdbTest.ReadEvents do
         recursive: false
       })
 
-    assert Enum.count(events) == 0
+    assert Enum.empty?(events)
   end
 
   test "read from last event", %{esdb: esdb} do

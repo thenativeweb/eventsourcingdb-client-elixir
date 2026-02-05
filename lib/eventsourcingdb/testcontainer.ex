@@ -80,7 +80,7 @@ defmodule Eventsourcingdb.TestContainer do
       |> with_environment(:ESDB_API_TOKEN, builder.api_token)
       |> with_waiting_strategy(
         HttpWaitStrategy.new("/api/v1/ping", builder.port,
-          timeout: 10000,
+          timeout: 10_000,
           status_code: 200
         )
       )

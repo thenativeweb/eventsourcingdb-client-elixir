@@ -66,8 +66,6 @@ defmodule Eventsourcingdb do
   #
 
   defp request_stream(client, request) do
-    request_module = get_request_module(request)
-
     Stream.resource(
       fn ->
         response =
@@ -82,71 +80,7 @@ defmodule Eventsourcingdb do
         end
       end,
       fn
-        response ->
-          case Req.parse_message(
-                 response,
-                 receive do
-                   message -> message
-                 end
-               ) do
-            {:ok, [data: chunk]} ->
-              json = Jason.decode(chunk)
-              expected_type = request_module.type()
-
-              # evaluate message
-              result =
-                case json do
-                  {:ok, %{"type" => type, "payload" => payload}} ->
-                    case type do
-                      # This is the expected type, so we try to parse it.
-                      ^expected_type ->
-                        {:ok, request_module.process(payload)}
-
-                      # Forward Errors from the DB as :db_error
-                      "error" ->
-                        {:error, :db_error, payload}
-
-                      # Ignore heartbeat messages.
-                      "heartbeat" ->
-                        nil
-
-                      other ->
-                        {:error, :invalid_response_type,
-                         "Expected type \"#{expected_type}\", but got \"#{other}\""}
-                    end
-
-                  {:error, reason} ->
-                    {:error, reason}
-                end
-
-              # process the evaluated result
-              case result do
-                # push forward into the consumer stream
-                {:ok, message} ->
-                  {[message], response}
-
-                # do the whoopsie
-                {:error, reason} ->
-                  {:error, reason}
-
-                  # nil -> do nothing whin its nil
-              end
-
-            {:error, reason} ->
-              {:error, reason}
-
-            # This is returned when the stream is done.
-            {:ok, [:done]} ->
-              {:halt, response}
-
-            # This is received inside Finch from a process that is not the socket.
-            # Ideally Req should be able to handle this and return a proper error or ignore it.
-            :unknown ->
-              {[], response}
-
-            _something_else ->
-              {[], response}
-          end
+        response -> handle_stream(response, request)
       end,
       fn
         %Req.Response{} = resp ->
@@ -158,6 +92,78 @@ defmodule Eventsourcingdb do
     )
   end
 
+  defp handle_stream(response, request) do
+    case Req.parse_message(
+           response,
+           receive do
+             message -> message
+           end
+         ) do
+      {:ok, [data: chunk]} ->
+        json = Jason.decode(chunk)
+
+        # evaluate message
+        result = evaluate_message(json, request)
+
+        # process the evaluated result
+        case result do
+          # push forward into the consumer stream
+          {:ok, message} ->
+            {[message], response}
+
+          # handle errors with the message
+          {:error, reason} ->
+            {:error, reason}
+
+            # nil -> do nothing when its nil
+        end
+
+      {:error, reason} ->
+        {:error, reason}
+
+      # This is returned when the stream is done.
+      {:ok, [:done]} ->
+        {:halt, response}
+
+      # This is received inside Finch from a process that is not the socket.
+      # Ideally Req should be able to handle this and return a proper error or ignore it.
+      :unknown ->
+        {[], response}
+
+      _something_else ->
+        {[], response}
+    end
+  end
+
+  defp evaluate_message(message, request) do
+    request_module = get_request_module(request)
+    expected_type = request_module.type()
+
+    case message do
+      {:ok, %{"type" => type, "payload" => payload}} ->
+        case type do
+          # This is the expected type, so we try to parse it.
+          ^expected_type ->
+            {:ok, request_module.process(payload)}
+
+          # Forward Errors from the DB as :db_error
+          "error" ->
+            {:error, :db_error, payload}
+
+          # Ignore heartbeat messages.
+          "heartbeat" ->
+            nil
+
+          other ->
+            {:error, :invalid_response_type,
+             "Expected type \"#{expected_type}\", but got \"#{other}\""}
+        end
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
   @spec request_one_shot(Eventsourcingdb.Client.t(), struct()) :: any()
   defp request_one_shot(client, request) do
     request_module = get_request_module(request)
@@ -167,6 +173,10 @@ defmodule Eventsourcingdb do
       |> build_request(request)
       |> Req.request()
 
+    # credo warns the last two statements have the same error signature and can
+    # therefore be combined. This was a design choice on purpose to have
+    # dedicated function to validate response and request body respectively.
+    # credo:disable-for-lines:2
     result =
       with {:ok} <- validate_transmission(response),
            {:ok} <- validate_server_headers(response),
