@@ -51,7 +51,7 @@ defmodule EventsourcingdbTest.ReadEvents do
     events = Eventsourcingdb.read_events(client, "/test") |> Enum.to_list()
 
     assert length(events) == 1
-    assert assert_event_match_eventcandidate(Enum.at(events, 0), event_candidate)
+    assert_event_match_eventcandidate(Enum.at(events, 0), event_candidate)
   end
 
   test "read recursive", %{esdb: esdb} do
@@ -83,7 +83,7 @@ defmodule EventsourcingdbTest.ReadEvents do
       |> Enum.to_list()
 
     assert Enum.count(events) == 1
-    assert assert_event_match_eventcandidate(Enum.at(events, 0), event_candidate_parent)
+    assert_event_match_eventcandidate(Enum.at(events, 0), event_candidate_parent)
   end
 
   test "read chronological", %{esdb: esdb} do
