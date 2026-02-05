@@ -13,7 +13,11 @@ defmodule EventsourcingdbTest.Essentials do
 
   test "ping unavailable server" do
     client =
-      Client.new(base_url: "http://localhost:12345", api_token: "secrettoken", retry: false)
+      Client.new(
+        base_url: "http://localhost:12345",
+        api_token: "secrettoken",
+        req_options: [retry: false]
+      )
 
     result = Eventsourcingdb.ping(client)
 
