@@ -1,4 +1,4 @@
-defmodule Eventsourcingdb.Requests.ReadEvents do
+defmodule Eventsourcingdb.Requests.ObserveEvents do
   alias Eventsourcingdb.Events.Event
   alias Eventsourcingdb.{StreamRequest, Endpoint}
 
@@ -7,22 +7,15 @@ defmodule Eventsourcingdb.Requests.ReadEvents do
   use TypedStruct
 
   method :post
-  path "/api/v1/read-events"
+  path "/api/v1/observe-events"
   type "event"
 
   typedstruct do
     field :subject, String.t(), enforce: true
-    field :options, Eventsourcingdb.Requests.ReadEvents.ReadEventsOptions.t()
+    field :options, Eventsourcingdb.Requests.ObserveEvents.ObserveEventsOptions.t()
   end
 
-  # @spec new(String.t()) :: struct()
-  # def new(subject) do
-  #   struct!(__MODULE__,
-  #     subject: subject
-  #   )
-  # end
-
-  @spec new(String.t(), Eventsourcingdb.Requests.ReadEvents.ReadEventsOptions.t() | nil) ::
+  @spec new(String.t(), Eventsourcingdb.Requests.ObserveEvents.ObserveEventsOptions.t() | nil) ::
           struct()
   def new(subject, options \\ nil) do
     struct!(__MODULE__,
@@ -51,13 +44,11 @@ defmodule Eventsourcingdb.Requests.ReadEvents do
 
   # region Options
 
-  defmodule ReadEventsOptions do
+  defmodule ObserveEventsOptions do
     typedstruct do
       field :recursive, boolean(), enforce: true
-      field :order, :chronological | :antichronological
       field :from_latest_event, Eventsourcingdb.RequestOptions.FromLatestEventOptions.t()
       field :lower_bound, Eventsourcingdb.RequestOptions.BoundOptions.t()
-      field :upper_bound, Eventsourcingdb.RequestOptions.BoundOptions.t()
     end
 
     @spec new(keyword()) :: t()
@@ -70,16 +61,17 @@ defmodule Eventsourcingdb.Requests.ReadEvents do
     end
 
     defimpl Jason.Encoder do
-      @spec encode(Eventsourcingdb.Requests.ReadEvents.ReadEventsOptions.t(), Jason.Encode.opts()) ::
+      @spec encode(
+              Eventsourcingdb.Requests.ObserveEvents.ObserveEventsOptions.t(),
+              Jason.Encode.opts()
+            ) ::
               iodata()
       def encode(value, opts) do
         Jason.Encode.map(
           %{
             "recursive" => value.recursive,
-            "order" => value.order,
             "fromLatestEvent" => value.from_latest_event,
-            "lowerBound" => value.lower_bound,
-            "upperBound" => value.upper_bound
+            "lowerBound" => value.lower_bound
           }
           |> Map.filter(fn {_k, v} -> not is_nil(v) and v != "" end),
           opts
