@@ -7,7 +7,10 @@ defmodule Eventsourcingdb.Preconditions.IsSubjectOnEventId do
       Jason.Encode.map(
         %{
           "type" => "isSubjectOnEventId",
-          "payload" => %{"subject" => value["subject"], "eventId" => value["event_id"]}
+          "payload" => %{
+            "subject" => value.subject,
+            "eventId" => value.event_id
+          }
         },
         opts
       )
