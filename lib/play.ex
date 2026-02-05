@@ -1,3 +1,4 @@
+# credo:disable-for-this-file Credo.Check.Warning.IoInspect
 defmodule Play do
   alias Eventsourcingdb.Requests.ReadEvents.ReadEventsOptions
   alias Eventsourcingdb.Preconditions.IsSubjectPristine
