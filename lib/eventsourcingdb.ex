@@ -2,8 +2,17 @@ defmodule Eventsourcingdb do
   @moduledoc """
   Documentation for `Eventsourcingdb`.
   """
+
   alias Eventsourcingdb.Events.Event
-  alias Eventsourcingdb.Requests.{VerifyApiToken, Ping, ReadEventType, WriteEvents, ReadEvents}
+
+  alias Eventsourcingdb.Requests.{
+    VerifyApiToken,
+    Ping,
+    ReadEventType,
+    WriteEvents,
+    ReadEvents,
+    ObserveEvents
+  }
 
   #
   # region Public API
@@ -43,22 +52,33 @@ defmodule Eventsourcingdb do
   end
 
   @spec write_events(Eventsourcingdb.Client.t(), maybe_improper_list(), any()) ::
-          {:ok, [Event.t()]} | {:error, String.t()}
+          {:ok, Enumerable.t(Event.t())} | {:error, String.t()}
   def write_events(client, events, preconditions \\ []) when is_list(events) do
     request_one_shot(client, WriteEvents.new(events, preconditions))
   end
 
-  @spec write_events!(Eventsourcingdb.Client.t(), maybe_improper_list(), any()) :: [Event.t()]
+  @spec write_events!(Eventsourcingdb.Client.t(), maybe_improper_list(), any()) ::
+          Enumerable.t(Event.t())
   def write_events!(client, events, preconditions \\ []) when is_list(events) do
     request_one_shot!(client, WriteEvents.new(events, preconditions))
   end
 
-  def read_events(client, subject, options) do
+  @spec read_events(
+          Eventsourcingdb.Client.t(),
+          String.t(),
+          Eventsourcingdb.Requests.ReadEvents.ReadEventsOptions.t() | nil
+        ) :: Enumerable.t(Event.t())
+  def read_events(client, subject, options \\ nil) do
     request_stream(client, ReadEvents.new(subject, options))
   end
 
-  def read_events(client, subject) do
-    request_stream(client, ReadEvents.new(subject))
+  @spec observe_events(
+          Eventsourcingdb.Client.t(),
+          String.t(),
+          Eventsourcingdb.Requests.ObserveEvents.ObserveEventsOptions.t() | nil
+        ) :: Enumerable.t(Event.t())
+  def observe_events(client, subject, options \\ nil) do
+    request_stream(client, ObserveEvents.new(subject, options))
   end
 
   #
