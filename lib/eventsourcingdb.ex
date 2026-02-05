@@ -3,6 +3,7 @@ defmodule Eventsourcingdb do
   Documentation for `Eventsourcingdb`.
   """
 
+  alias Eventsourcingdb.Requests.RunEventQL
   alias Eventsourcingdb.Events.Event
 
   alias Eventsourcingdb.Requests.{
@@ -79,6 +80,14 @@ defmodule Eventsourcingdb do
         ) :: Enumerable.t(Event.t())
   def observe_events(client, subject, options \\ nil) do
     request_stream(client, ObserveEvents.new(subject, options))
+  end
+
+  @spec run_eventql_query(
+          Eventsourcingdb.Client.t(),
+          String.t()
+        ) :: Enumerable.t()
+  def run_eventql_query(client, query) do
+    request_stream(client, RunEventQL.new(query))
   end
 
   #
