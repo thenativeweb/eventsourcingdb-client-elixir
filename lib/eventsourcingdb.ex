@@ -15,7 +15,8 @@ defmodule Eventsourcingdb do
     ReadEventType,
     WriteEvents,
     ReadEvents,
-    ObserveEvents
+    ObserveEvents,
+    ReadSubjects
   }
 
   #
@@ -103,6 +104,14 @@ defmodule Eventsourcingdb do
           ManagementEvent.t()
   def register_event_schema!(client, event_type, schema) do
     request_one_shot!(client, RegisterEventSchema.new(event_type, schema))
+  end
+
+  @spec read_subjects(
+          Eventsourcingdb.Client.t(),
+          String.t()
+        ) :: Enumerable.t(String.t())
+  def read_subjects(client, base_subject) do
+    request_stream(client, ReadSubjects.new(base_subject))
   end
 
   #
