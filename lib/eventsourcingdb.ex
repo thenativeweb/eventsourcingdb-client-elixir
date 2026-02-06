@@ -3,6 +3,9 @@ defmodule Eventsourcingdb do
   Documentation for `Eventsourcingdb`.
   """
 
+  alias Eventsourcingdb.Events.ManagementEvent
+  alias Eventsourcingdb.OneShotRequest
+  alias Eventsourcingdb.Requests.RegisterEventSchema
   alias Eventsourcingdb.Requests.RunEventQL
   alias Eventsourcingdb.Events.Event
 
@@ -88,6 +91,18 @@ defmodule Eventsourcingdb do
         ) :: Enumerable.t()
   def run_eventql_query(client, query) do
     request_stream(client, RunEventQL.new(query))
+  end
+
+  @spec register_event_schema(Eventsourcingdb.Client.t(), String.t(), map()) ::
+          OneShotRequest.response(ManagementEvent.t())
+  def register_event_schema(client, event_type, schema) do
+    request_one_shot(client, RegisterEventSchema.new(event_type, schema))
+  end
+
+  @spec register_event_schema!(Eventsourcingdb.Client.t(), String.t(), map()) ::
+          ManagementEvent.t()
+  def register_event_schema!(client, event_type, schema) do
+    request_one_shot!(client, RegisterEventSchema.new(event_type, schema))
   end
 
   #
