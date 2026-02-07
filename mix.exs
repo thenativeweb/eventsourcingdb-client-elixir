@@ -28,6 +28,7 @@ defmodule Eventsourcingdb.MixProject do
     [
       {:req, "~> 0.5.16"},
       {:jason, "~> 1.2"},
+      {:ex_json_schema, "~> 0.11.2"},
       {:typedstruct, "~> 0.5"},
       {:testcontainers, "~> 1.14.1", only: [:test, :dev]},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false}

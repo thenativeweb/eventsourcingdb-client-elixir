@@ -3,16 +3,21 @@ defmodule Eventsourcingdb do
   Documentation for `Eventsourcingdb`.
   """
 
-  alias Eventsourcingdb.Requests.RunEventQL
+  alias Eventsourcingdb.Events.ManagementEvent
+  alias Eventsourcingdb.OneShotRequest
   alias Eventsourcingdb.Events.Event
 
   alias Eventsourcingdb.Requests.{
-    VerifyApiToken,
+    ObserveEvents,
     Ping,
-    ReadEventType,
-    WriteEvents,
     ReadEvents,
-    ObserveEvents
+    ReadEventType,
+    ReadEventTypes,
+    ReadSubjects,
+    RegisterEventSchema,
+    RunEventQL,
+    VerifyApiToken,
+    WriteEvents
   }
 
   #
@@ -45,11 +50,6 @@ defmodule Eventsourcingdb do
   @spec verify_api_token(Eventsourcingdb.Client.t()) :: any()
   def verify_api_token(client) do
     request_one_shot(client, VerifyApiToken.new())
-  end
-
-  @spec read_event_type(Eventsourcingdb.Client.t(), any()) :: any()
-  def read_event_type(client, event_type) do
-    request_one_shot(client, ReadEventType.new(event_type))
   end
 
   @spec write_events(Eventsourcingdb.Client.t(), maybe_improper_list(), any()) ::
@@ -88,6 +88,41 @@ defmodule Eventsourcingdb do
         ) :: Enumerable.t()
   def run_eventql_query(client, query) do
     request_stream(client, RunEventQL.new(query))
+  end
+
+  @spec register_event_schema(Eventsourcingdb.Client.t(), String.t(), map()) ::
+          OneShotRequest.response(ManagementEvent.t())
+  def register_event_schema(client, event_type, schema) do
+    request_one_shot(client, RegisterEventSchema.new(event_type, schema))
+  end
+
+  @spec register_event_schema!(Eventsourcingdb.Client.t(), String.t(), map()) ::
+          ManagementEvent.t()
+  def register_event_schema!(client, event_type, schema) do
+    request_one_shot!(client, RegisterEventSchema.new(event_type, schema))
+  end
+
+  @spec read_subjects(
+          Eventsourcingdb.Client.t(),
+          String.t()
+        ) :: Enumerable.t(String.t())
+  def read_subjects(client, base_subject) do
+    request_stream(client, ReadSubjects.new(base_subject))
+  end
+
+  @spec read_event_type(Eventsourcingdb.Client.t(), String.t()) :: any()
+  def read_event_type(client, event_type) do
+    request_one_shot(client, ReadEventType.new(event_type))
+  end
+
+  @spec read_event_type!(Eventsourcingdb.Client.t(), String.t()) :: any()
+  def read_event_type!(client, event_type) do
+    request_one_shot!(client, ReadEventType.new(event_type))
+  end
+
+  @spec read_event_types(Eventsourcingdb.Client.t()) :: any()
+  def read_event_types(client) do
+    request_stream(client, ReadEventTypes.new())
   end
 
   #
