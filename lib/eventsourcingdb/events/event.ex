@@ -1,3 +1,5 @@
+# temporary (for debugging)
+# credo:disable-for-this-file Credo.Check.Warning.IoInspect
 defmodule Eventsourcingdb.Event do
   @moduledoc """
   An Event coming from the server.
