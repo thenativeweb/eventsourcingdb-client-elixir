@@ -5,18 +5,19 @@ defmodule Eventsourcingdb do
 
   alias Eventsourcingdb.Events.ManagementEvent
   alias Eventsourcingdb.OneShotRequest
-  alias Eventsourcingdb.Requests.RegisterEventSchema
-  alias Eventsourcingdb.Requests.RunEventQL
   alias Eventsourcingdb.Events.Event
 
   alias Eventsourcingdb.Requests.{
-    VerifyApiToken,
-    Ping,
-    ReadEventType,
-    WriteEvents,
-    ReadEvents,
     ObserveEvents,
-    ReadSubjects
+    Ping,
+    ReadEvents,
+    ReadEventType,
+    ReadEventTypes,
+    ReadSubjects,
+    RegisterEventSchema,
+    RunEventQL,
+    VerifyApiToken,
+    WriteEvents
   }
 
   #
@@ -49,11 +50,6 @@ defmodule Eventsourcingdb do
   @spec verify_api_token(Eventsourcingdb.Client.t()) :: any()
   def verify_api_token(client) do
     request_one_shot(client, VerifyApiToken.new())
-  end
-
-  @spec read_event_type(Eventsourcingdb.Client.t(), any()) :: any()
-  def read_event_type(client, event_type) do
-    request_one_shot(client, ReadEventType.new(event_type))
   end
 
   @spec write_events(Eventsourcingdb.Client.t(), maybe_improper_list(), any()) ::
@@ -112,6 +108,21 @@ defmodule Eventsourcingdb do
         ) :: Enumerable.t(String.t())
   def read_subjects(client, base_subject) do
     request_stream(client, ReadSubjects.new(base_subject))
+  end
+
+  @spec read_event_type(Eventsourcingdb.Client.t(), String.t()) :: any()
+  def read_event_type(client, event_type) do
+    request_one_shot(client, ReadEventType.new(event_type))
+  end
+
+  @spec read_event_type!(Eventsourcingdb.Client.t(), String.t()) :: any()
+  def read_event_type!(client, event_type) do
+    request_one_shot!(client, ReadEventType.new(event_type))
+  end
+
+  @spec read_event_types(Eventsourcingdb.Client.t()) :: any()
+  def read_event_types(client) do
+    request_stream(client, ReadEventTypes.new())
   end
 
   #
