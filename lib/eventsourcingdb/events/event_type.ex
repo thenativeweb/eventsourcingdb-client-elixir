@@ -1,4 +1,5 @@
 defmodule Eventsourcingdb.Events.EventType do
+  alias Eventsourcingdb.Events.EventType
   use TypedStruct
 
   typedstruct do
@@ -7,6 +8,7 @@ defmodule Eventsourcingdb.Events.EventType do
     field :schema, map()
   end
 
+  @spec new(map()) :: EventType.t()
   def new(value \\ %{}) do
     struct!(
       __MODULE__,

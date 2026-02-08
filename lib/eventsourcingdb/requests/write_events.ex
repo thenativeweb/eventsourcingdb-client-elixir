@@ -5,9 +5,15 @@ defmodule Eventsourcingdb.Requests.WriteEvents do
   use OneShotRequest
   use TypedStruct
 
+  # region metadata
+
   method :post
   path "/api/v1/write-events"
 
+  # region request
+  # parameters and serialization
+
+  @derive Jason.Encoder
   typedstruct do
     field :events, Eventsourcingdb.Events.EventCandidate.t()
     field :preconditions, any(), default: []
@@ -17,16 +23,10 @@ defmodule Eventsourcingdb.Requests.WriteEvents do
     struct!(__MODULE__, events: events, preconditions: preconditions)
   end
 
+  # region response
+  # validation and parsing
+
   def validate_body(payload) do
     {:ok, Enum.map(payload, fn ev -> Event.new(ev) end)}
-  end
-
-  defimpl Jason.Encoder do
-    def encode(value, opts) do
-      Jason.Encode.map(
-        %{"events" => value.events, "preconditions" => value.preconditions},
-        opts
-      )
-    end
   end
 end

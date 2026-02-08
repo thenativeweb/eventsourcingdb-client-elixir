@@ -1,4 +1,4 @@
-defmodule EventsourcingdbTest.RegisterEventSchemaTests do
+defmodule EventsourcingdbTest.RegisterEventSchema do
   alias Eventsourcingdb.TestContainer
   use ExUnit.Case
 

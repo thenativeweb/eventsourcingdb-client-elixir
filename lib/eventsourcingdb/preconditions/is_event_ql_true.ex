@@ -1,6 +1,9 @@
 defmodule Eventsourcingdb.Preconditions.IsEventQLTrue do
-  @enforce_keys [:query]
-  defstruct [:query]
+  use TypedStruct
+
+  typedstruct do
+    field :query, String.t(), enforce: true
+  end
 
   defimpl Jason.Encoder do
     def encode(value, opts) do
