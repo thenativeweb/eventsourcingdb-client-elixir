@@ -9,7 +9,13 @@ defmodule Eventsourcingdb.Preconditions.IsSubjectOnEventId do
   defimpl Jason.Encoder do
     def encode(value, opts) do
       Jason.Encode.map(
-        %{"type" => "isSubjectOnEventId", "payload" => Map.from_struct(value)},
+        %{
+          "type" => "isSubjectOnEventId",
+          "payload" => %{
+            "subject" => value.subject,
+            "eventId" => value.event_id
+          }
+        },
         opts
       )
     end
