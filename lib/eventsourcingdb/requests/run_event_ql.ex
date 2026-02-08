@@ -5,9 +5,14 @@ defmodule Eventsourcingdb.Requests.RunEventQL do
   use StreamRequest
   use TypedStruct
 
+  # region metadata
+
   method :post
   path "/api/v1/run-eventql-query"
   type "row"
+
+  # region request
+  # parameters and serialization
 
   @derive Jason.Encoder
   typedstruct do
@@ -18,4 +23,7 @@ defmodule Eventsourcingdb.Requests.RunEventQL do
   def new(query) do
     struct!(__MODULE__, query: query)
   end
+
+  # region response
+  # validation and parsing
 end

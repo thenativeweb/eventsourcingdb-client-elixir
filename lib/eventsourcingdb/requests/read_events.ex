@@ -6,9 +6,14 @@ defmodule Eventsourcingdb.Requests.ReadEvents do
   use StreamRequest
   use TypedStruct
 
+  # region metadata
+
   method :post
   path "/api/v1/read-events"
   type "event"
+
+  # region request
+  # parameters and serialization
 
   typedstruct do
     field :subject, String.t(), enforce: true
@@ -23,8 +28,6 @@ defmodule Eventsourcingdb.Requests.ReadEvents do
       options: options
     )
   end
-
-  def process(data), do: Event.new(data)
 
   defimpl Jason.Encoder do
     def encode(value, opts) when is_nil(value.options) do
@@ -41,6 +44,11 @@ defmodule Eventsourcingdb.Requests.ReadEvents do
       )
     end
   end
+
+  # region response
+  # validation and parsing
+
+  def process(data), do: Event.new(data)
 
   # region Options
 
