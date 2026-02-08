@@ -1,4 +1,5 @@
 defmodule Eventsourcingdb.Events.Event do
+  alias Eventsourcingdb.Events.Event
   use TypedStruct
 
   typedstruct do
@@ -17,7 +18,8 @@ defmodule Eventsourcingdb.Events.Event do
     field :type, String.t(), enforce: true
   end
 
-  def new(value \\ []) do
+  @spec new(map()) :: Event.t()
+  def new(value \\ %{}) do
     struct!(__MODULE__, value |> Map.new(fn {k, v} -> {String.to_existing_atom(k), v} end))
   end
 end

@@ -8,6 +8,7 @@ defmodule Eventsourcingdb.Requests.WriteEvents do
   method :post
   path "/api/v1/write-events"
 
+  @derive Jason.Encoder
   typedstruct do
     field :events, Eventsourcingdb.Events.EventCandidate.t()
     field :preconditions, any(), default: []
@@ -19,14 +20,5 @@ defmodule Eventsourcingdb.Requests.WriteEvents do
 
   def validate_body(payload) do
     {:ok, Enum.map(payload, fn ev -> Event.new(ev) end)}
-  end
-
-  defimpl Jason.Encoder do
-    def encode(value, opts) do
-      Jason.Encode.map(
-        %{"events" => value.events, "preconditions" => value.preconditions},
-        opts
-      )
-    end
   end
 end

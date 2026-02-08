@@ -3,8 +3,8 @@ defmodule Eventsourcingdb do
   Documentation for `Eventsourcingdb`.
   """
 
+  alias Eventsourcingdb.Events.EventType
   alias Eventsourcingdb.Events.ManagementEvent
-  alias Eventsourcingdb.OneShotRequest
   alias Eventsourcingdb.Events.Event
 
   alias Eventsourcingdb.Requests.{
@@ -24,6 +24,9 @@ defmodule Eventsourcingdb do
   # region Public API
   #
 
+  @type response(t) :: {:ok, t} | {:error, any()}
+  @type stream_response(t) :: Enumerable.t(t)
+
   @doc """
   Pings the DB instance to check if it is reachable.
 
@@ -33,7 +36,7 @@ defmodule Eventsourcingdb do
       iex> Eventsourcingdb.ping(client)
       :ok
   """
-  @spec ping(Eventsourcingdb.Client.t()) :: any()
+  @spec ping(Eventsourcingdb.Client.t()) :: :ok | {:error, any()}
   def ping(client) do
     request_one_shot(client, Ping.new())
   end
@@ -47,19 +50,19 @@ defmodule Eventsourcingdb do
       iex> Eventsourcingdb.verify_api_token(client)
       :ok
   """
-  @spec verify_api_token(Eventsourcingdb.Client.t()) :: any()
+  @spec verify_api_token(Eventsourcingdb.Client.t()) :: :ok | {:error, any()}
   def verify_api_token(client) do
     request_one_shot(client, VerifyApiToken.new())
   end
 
   @spec write_events(Eventsourcingdb.Client.t(), maybe_improper_list(), any()) ::
-          {:ok, Enumerable.t(Event.t())} | {:error, String.t()}
+          response(Event.t())
   def write_events(client, events, preconditions \\ []) when is_list(events) do
     request_one_shot(client, WriteEvents.new(events, preconditions))
   end
 
   @spec write_events!(Eventsourcingdb.Client.t(), maybe_improper_list(), any()) ::
-          Enumerable.t(Event.t())
+          Event.t()
   def write_events!(client, events, preconditions \\ []) when is_list(events) do
     request_one_shot!(client, WriteEvents.new(events, preconditions))
   end
@@ -68,7 +71,7 @@ defmodule Eventsourcingdb do
           Eventsourcingdb.Client.t(),
           String.t(),
           Eventsourcingdb.Requests.ReadEvents.ReadEventsOptions.t() | nil
-        ) :: Enumerable.t(Event.t())
+        ) :: stream_response(Event.t())
   def read_events(client, subject, options \\ nil) do
     request_stream(client, ReadEvents.new(subject, options))
   end
@@ -77,21 +80,22 @@ defmodule Eventsourcingdb do
           Eventsourcingdb.Client.t(),
           String.t(),
           Eventsourcingdb.Requests.ObserveEvents.ObserveEventsOptions.t() | nil
-        ) :: Enumerable.t(Event.t())
+        ) :: stream_response(Event.t())
   def observe_events(client, subject, options \\ nil) do
     request_stream(client, ObserveEvents.new(subject, options))
   end
 
+  # TODO: define return type
   @spec run_eventql_query(
           Eventsourcingdb.Client.t(),
           String.t()
-        ) :: Enumerable.t()
+        ) :: stream_response(any())
   def run_eventql_query(client, query) do
     request_stream(client, RunEventQL.new(query))
   end
 
   @spec register_event_schema(Eventsourcingdb.Client.t(), String.t(), map()) ::
-          OneShotRequest.response(ManagementEvent.t())
+          response(ManagementEvent.t())
   def register_event_schema(client, event_type, schema) do
     request_one_shot(client, RegisterEventSchema.new(event_type, schema))
   end
@@ -105,22 +109,22 @@ defmodule Eventsourcingdb do
   @spec read_subjects(
           Eventsourcingdb.Client.t(),
           String.t()
-        ) :: Enumerable.t(String.t())
+        ) :: stream_response(String.t())
   def read_subjects(client, base_subject) do
     request_stream(client, ReadSubjects.new(base_subject))
   end
 
-  @spec read_event_type(Eventsourcingdb.Client.t(), String.t()) :: any()
+  @spec read_event_type(Eventsourcingdb.Client.t(), String.t()) :: response(EventType.t())
   def read_event_type(client, event_type) do
     request_one_shot(client, ReadEventType.new(event_type))
   end
 
-  @spec read_event_type!(Eventsourcingdb.Client.t(), String.t()) :: any()
+  @spec read_event_type!(Eventsourcingdb.Client.t(), String.t()) :: EventType.t()
   def read_event_type!(client, event_type) do
     request_one_shot!(client, ReadEventType.new(event_type))
   end
 
-  @spec read_event_types(Eventsourcingdb.Client.t()) :: any()
+  @spec read_event_types(Eventsourcingdb.Client.t()) :: stream_response(EventType.t())
   def read_event_types(client) do
     request_stream(client, ReadEventTypes.new())
   end
