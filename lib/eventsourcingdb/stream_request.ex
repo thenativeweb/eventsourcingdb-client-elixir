@@ -1,4 +1,5 @@
 defmodule Eventsourcingdb.StreamRequest do
+  @moduledoc false
   alias Eventsourcingdb.StreamRequest
 
   @callback type() :: String.t()

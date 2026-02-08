@@ -1,7 +1,7 @@
 defmodule EventsourcingdbTest.ReadEvents do
-  alias Eventsourcingdb.Requests.ReadEvents.ReadEventsOptions
-  alias Eventsourcingdb.RequestOptions.BoundOptions
-  alias Eventsourcingdb.RequestOptions.FromLatestEventOptions
+  alias Eventsourcingdb.FromLatestEventOptions
+  alias Eventsourcingdb.BoundOptions
+  alias Eventsourcingdb.ReadEventsOptions
   alias Eventsourcingdb.TestContainer
   import EventsourcingdbTest.Utils
   use ExUnit.Case

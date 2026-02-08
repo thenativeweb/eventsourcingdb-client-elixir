@@ -1,5 +1,5 @@
-defmodule Eventsourcingdb.Events.ManagementEvent do
-  alias Eventsourcingdb.Events.ManagementEvent
+defmodule Eventsourcingdb.ManagementEvent do
+  alias Eventsourcingdb.ManagementEvent
   use TypedStruct
 
   typedstruct enforce: true do

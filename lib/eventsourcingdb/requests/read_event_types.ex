@@ -1,5 +1,6 @@
 defmodule Eventsourcingdb.Requests.ReadEventTypes do
-  alias Eventsourcingdb.Events.EventType
+  @moduledoc false
+  alias Eventsourcingdb.EventType
   alias Eventsourcingdb.{StreamRequest, Endpoint}
 
   use Endpoint

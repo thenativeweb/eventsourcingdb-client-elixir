@@ -1,4 +1,4 @@
-defmodule Eventsourcingdb.Preconditions.IsSubjectPristine do
+defmodule Eventsourcingdb.IsSubjectPristine do
   use TypedStruct
 
   typedstruct do

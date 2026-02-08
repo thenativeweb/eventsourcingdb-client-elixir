@@ -1,4 +1,4 @@
-defmodule Eventsourcingdb.Events.EventCandidate do
+defmodule Eventsourcingdb.EventCandidate do
   use TypedStruct
 
   typedstruct do

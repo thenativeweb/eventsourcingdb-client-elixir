@@ -1,4 +1,6 @@
 defmodule Eventsourcingdb.Requests.ReadSubjects do
+  @moduledoc false
+  alias Eventsourcingdb.Requests.ReadSubjects
   alias Eventsourcingdb.{StreamRequest, Endpoint}
 
   use Endpoint
@@ -18,7 +20,7 @@ defmodule Eventsourcingdb.Requests.ReadSubjects do
     field :base_subject, String.t(), enforce: true
   end
 
-  @spec new(String.t()) :: struct()
+  @spec new(String.t()) :: ReadSubjects.t()
   def new(base_subject) do
     struct!(__MODULE__, base_subject: base_subject)
   end

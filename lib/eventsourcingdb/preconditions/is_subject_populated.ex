@@ -1,4 +1,4 @@
-defmodule Eventsourcingdb.Preconditions.IsSubjectPopulated do
+defmodule Eventsourcingdb.IsSubjectPopulated do
   use TypedStruct
 
   typedstruct do

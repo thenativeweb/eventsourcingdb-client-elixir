@@ -1,4 +1,4 @@
-defmodule Eventsourcingdb.Preconditions.IsEventQLTrue do
+defmodule Eventsourcingdb.IsEventQLTrue do
   use TypedStruct
 
   typedstruct do

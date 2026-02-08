@@ -1,4 +1,5 @@
 defmodule Eventsourcingdb.Endpoint do
+  @moduledoc false
   alias Eventsourcingdb.Endpoint
 
   @callback path() :: String.t()

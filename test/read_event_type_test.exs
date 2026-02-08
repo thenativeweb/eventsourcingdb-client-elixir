@@ -1,6 +1,6 @@
 defmodule EventsourcingdbTest.ReadEventType do
-  alias Eventsourcingdb.Events.EventCandidate
-  alias Eventsourcingdb.Events.EventType
+  alias Eventsourcingdb.EventCandidate
+  alias Eventsourcingdb.EventType
   alias Eventsourcingdb.TestContainer
   import EventsourcingdbTest.Utils
   use ExUnit.Case

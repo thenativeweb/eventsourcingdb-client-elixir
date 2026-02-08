@@ -1,5 +1,7 @@
 defmodule Eventsourcingdb.Requests.WriteEvents do
-  alias Eventsourcingdb.{OneShotRequest, Endpoint, Events.Event}
+  @moduledoc false
+  alias Eventsourcingdb.EventCandidate
+  alias Eventsourcingdb.{OneShotRequest, Endpoint, Event}
 
   use Endpoint
   use OneShotRequest
@@ -15,7 +17,7 @@ defmodule Eventsourcingdb.Requests.WriteEvents do
 
   @derive Jason.Encoder
   typedstruct do
-    field :events, Eventsourcingdb.Events.EventCandidate.t()
+    field :events, EventCandidate.t()
     field :preconditions, any(), default: []
   end
 

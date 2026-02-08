@@ -1,5 +1,5 @@
-defmodule Eventsourcingdb.Events.Event do
-  alias Eventsourcingdb.Events.Event
+defmodule Eventsourcingdb.Event do
+  alias Eventsourcingdb.Event
   use TypedStruct
 
   typedstruct do

@@ -1,5 +1,8 @@
 defmodule Eventsourcingdb.Requests.ReadEvents do
-  alias Eventsourcingdb.Events.Event
+  @moduledoc false
+  alias Eventsourcingdb.Requests.ReadEvents
+  alias Eventsourcingdb.ReadEventsOptions
+  alias Eventsourcingdb.Event
   alias Eventsourcingdb.{StreamRequest, Endpoint}
 
   use Endpoint
@@ -17,11 +20,10 @@ defmodule Eventsourcingdb.Requests.ReadEvents do
 
   typedstruct do
     field :subject, String.t(), enforce: true
-    field :options, Eventsourcingdb.Requests.ReadEvents.ReadEventsOptions.t()
+    field :options, ReadEventsOptions.t()
   end
 
-  @spec new(String.t(), Eventsourcingdb.Requests.ReadEvents.ReadEventsOptions.t() | nil) ::
-          struct()
+  @spec new(String.t(), ReadEventsOptions.t() | nil) :: ReadEvents.t()
   def new(subject, options \\ nil) do
     struct!(__MODULE__,
       subject: subject,
@@ -49,43 +51,4 @@ defmodule Eventsourcingdb.Requests.ReadEvents do
   # validation and parsing
 
   def process(data), do: Event.new(data)
-
-  # region Options
-
-  defmodule ReadEventsOptions do
-    typedstruct do
-      field :recursive, boolean(), enforce: true
-      field :order, :chronological | :antichronological
-      field :from_latest_event, Eventsourcingdb.RequestOptions.FromLatestEventOptions.t()
-      field :lower_bound, Eventsourcingdb.RequestOptions.BoundOptions.t()
-      field :upper_bound, Eventsourcingdb.RequestOptions.BoundOptions.t()
-    end
-
-    @spec new(keyword()) :: t()
-    def new(options) do
-      options =
-        options
-        |> Keyword.validate!([:recursive, :order, :from_latest_event, :lower_bound, :upper_bound])
-
-      struct!(__MODULE__, options)
-    end
-
-    defimpl Jason.Encoder do
-      @spec encode(Eventsourcingdb.Requests.ReadEvents.ReadEventsOptions.t(), Jason.Encode.opts()) ::
-              iodata()
-      def encode(value, opts) do
-        Jason.Encode.map(
-          %{
-            "recursive" => value.recursive,
-            "order" => value.order,
-            "fromLatestEvent" => value.from_latest_event,
-            "lowerBound" => value.lower_bound,
-            "upperBound" => value.upper_bound
-          }
-          |> Map.filter(fn {_k, v} -> not is_nil(v) and v != "" end),
-          opts
-        )
-      end
-    end
-  end
 end

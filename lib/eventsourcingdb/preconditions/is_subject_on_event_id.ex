@@ -1,4 +1,4 @@
-defmodule Eventsourcingdb.Preconditions.IsSubjectOnEventId do
+defmodule Eventsourcingdb.IsSubjectOnEventId do
   use TypedStruct
 
   typedstruct do

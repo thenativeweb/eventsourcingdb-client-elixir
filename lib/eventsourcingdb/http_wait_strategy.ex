@@ -1,11 +1,9 @@
 defmodule Eventsourcingdb.HttpWaitStrategy do
+  @moduledoc false
+
   # See:
   # - https://github.com/testcontainers/testcontainers-elixir/issues/236
   # - https://github.com/testcontainers/testcontainers-elixir/pull/237
-
-  @moduledoc """
-  Considers the container as ready when a http request is successful.
-  """
 
   @timeout 5000
 

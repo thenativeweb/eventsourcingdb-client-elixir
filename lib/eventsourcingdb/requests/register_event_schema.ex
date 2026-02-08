@@ -1,5 +1,6 @@
 defmodule Eventsourcingdb.Requests.RegisterEventSchema do
-  alias Eventsourcingdb.Events.ManagementEvent
+  @moduledoc false
+  alias Eventsourcingdb.ManagementEvent
   alias Eventsourcingdb.Requests.RegisterEventSchema
   alias Eventsourcingdb.{OneShotRequest, Endpoint}
 
