@@ -1,4 +1,4 @@
-defmodule EventsourcingdbTest.ReadEvents do
+defmodule EventsourcingdbTest.ObserveEvents do
   alias Eventsourcingdb.TestContainer
   import EventsourcingdbTest.Utils
   use ExUnit.Case
