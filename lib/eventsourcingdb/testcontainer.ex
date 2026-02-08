@@ -9,8 +9,7 @@ defmodule Eventsourcingdb.TestContainer do
 
   defstruct image_tag: @default_image_tag,
             api_token: @default_api_token,
-            port: @default_port,
-            signing_key: nil
+            port: @default_port
 
   # :port,
   # reuse: false
@@ -31,12 +30,6 @@ defmodule Eventsourcingdb.TestContainer do
 
   def with_api_token(%__MODULE__{} = config, api_token) do
     %{config | api_token: api_token}
-  end
-
-  def with_signing_key(%__MODULE__{} = config) do
-    {_, signing_key} = :crypto.generate_key(:ed25519, [])
-    IO.inspect(signing_key, label: "signing key")
-    %{config | signing_key: signing_key}
   end
 
   @doc """
@@ -64,8 +57,6 @@ defmodule Eventsourcingdb.TestContainer do
 
   def get_api_token(%Container{} = container), do: container.environment[:ESDB_API_TOKEN]
 
-  def get_signing_key(%Container{} = container), do: container.environment[:ESDB_SIGNING_KEY]
-
   def get_client(%Container{} = container) do
     Client.new(
       base_url: get_base_url(container),
@@ -83,34 +74,24 @@ defmodule Eventsourcingdb.TestContainer do
 
     @impl true
     def build(builder) do
-      container =
-        new("#{@image_name}:#{builder.image_tag}")
-        |> with_exposed_port(builder.port)
-        |> with_environment(:ESDB_PORT, Integer.to_string(builder.port))
-        |> with_environment(:ESDB_API_TOKEN, builder.api_token)
-        |> with_waiting_strategy(
-          HttpWaitStrategy.new("/api/v1/ping", builder.port,
-            timeout: 10_000,
-            status_code: 200
-          )
+      new("#{@image_name}:#{builder.image_tag}")
+      |> with_exposed_port(builder.port)
+      |> with_environment(:ESDB_PORT, Integer.to_string(builder.port))
+      |> with_environment(:ESDB_API_TOKEN, builder.api_token)
+      |> with_waiting_strategy(
+        HttpWaitStrategy.new("/api/v1/ping", builder.port,
+          timeout: 10_000,
+          status_code: 200
         )
-        |> with_cmd([
-          "run",
-          "--api-token",
-          builder.api_token,
-          "--data-directory-temporary",
-          "--http-enabled",
-          "--https-enabled=false"
-        ])
-
-      case builder.signing_key do
-        true ->
-          container
-          |> with_environment(:ESDB_SIGNING_KEY, builder.signing_key)
-
-        _ ->
-          container
-      end
+      )
+      |> with_cmd([
+        "run",
+        "--api-token",
+        builder.api_token,
+        "--data-directory-temporary",
+        "--http-enabled",
+        "--https-enabled=false"
+      ])
     end
 
     @impl true
