@@ -15,13 +15,6 @@ defmodule Eventsourcingdb.Requests.ReadEvents do
     field :options, Eventsourcingdb.Requests.ReadEvents.ReadEventsOptions.t()
   end
 
-  # @spec new(String.t()) :: struct()
-  # def new(subject) do
-  #   struct!(__MODULE__,
-  #     subject: subject
-  #   )
-  # end
-
   @spec new(String.t(), Eventsourcingdb.Requests.ReadEvents.ReadEventsOptions.t() | nil) ::
           struct()
   def new(subject, options \\ nil) do

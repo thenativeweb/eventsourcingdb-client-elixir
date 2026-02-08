@@ -1,6 +1,9 @@
 defmodule Eventsourcingdb.Preconditions.IsSubjectPopulated do
-  @enforce_keys [:subject]
-  defstruct [:subject]
+  use TypedStruct
+
+  typedstruct do
+    field :subject, String.t(), enforce: true
+  end
 
   defimpl Jason.Encoder do
     def encode(value, opts) do

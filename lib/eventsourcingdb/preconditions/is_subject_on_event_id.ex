@@ -1,17 +1,15 @@
 defmodule Eventsourcingdb.Preconditions.IsSubjectOnEventId do
-  @enforce_keys [:subject, :event_id]
-  defstruct [:subject, :event_id]
+  use TypedStruct
+
+  typedstruct do
+    field :subject, String.t(), enforce: true
+    field :event_id, String.t(), enforce: true
+  end
 
   defimpl Jason.Encoder do
     def encode(value, opts) do
       Jason.Encode.map(
-        %{
-          "type" => "isSubjectOnEventId",
-          "payload" => %{
-            "subject" => value.subject,
-            "eventId" => value.event_id
-          }
-        },
+        %{"type" => "isSubjectOnEventId", "payload" => Map.from_struct(value)},
         opts
       )
     end
