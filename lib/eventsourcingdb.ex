@@ -85,7 +85,6 @@ defmodule Eventsourcingdb do
     request_stream(client, ObserveEvents.new(subject, options))
   end
 
-  # TODO: define return type
   @spec run_eventql_query(
           Eventsourcingdb.Client.t(),
           String.t()
