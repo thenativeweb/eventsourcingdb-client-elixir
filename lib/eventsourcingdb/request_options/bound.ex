@@ -1,4 +1,11 @@
 defmodule Eventsourcingdb.BoundOptions do
+  @moduledoc """
+  Reading events within a specific range.
+
+  You can use the `lower_bound` and `upper_bound` parameters (individually or
+  together) to limit the result. Both bounds can be configured to be `:inclusive`
+  or `:exclusive`.
+  """
   use TypedStruct
 
   @derive Jason.Encoder

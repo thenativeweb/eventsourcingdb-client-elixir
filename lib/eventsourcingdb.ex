@@ -1,6 +1,6 @@
 defmodule Eventsourcingdb do
   @moduledoc """
-  Documentation for `Eventsourcingdb`.
+  `Eventsourcingdb` client SDK.
   """
 
   alias Eventsourcingdb.ObserveEventsOptions
@@ -27,7 +27,14 @@ defmodule Eventsourcingdb do
   # region Public API
   #
 
+  @typedoc """
+  The response format for a request
+  """
   @type response(t) :: {:ok, t} | {:error, any()}
+
+  @typedoc """
+  The response format for a request returning a stream
+  """
   @type stream_response(t) :: Enumerable.t(t)
 
   @doc """
@@ -58,6 +65,110 @@ defmodule Eventsourcingdb do
     request_one_shot(client, VerifyApiToken.new())
   end
 
+  @doc """
+  Writing Events
+
+  Call the `write_events` function and hand over a list with one or more events. You do not have to provide all event fields – some are automatically added by the server.
+
+  Specify `source`, `subject`, `type`, and `data` according to the
+  [CloudEvents](https://docs.eventsourcingdb.io/fundamentals/cloud-events/)
+  format.
+
+  The function returns the written events, including the fields added by the
+  server:
+
+  ```elixir
+  event = %Eventsourcingdb.EventCandidate{
+    source: "https://library.eventsourcingdb.io",
+    subject: "/books/42",
+    type: "io.eventsourcingdb.library.book-acquired",
+    data: %{
+      "title" => "2001 - A Space Odyssey",
+      "author" => "Arthur C. Clarke",
+      "isbn" => "978-0756906788",
+    }
+  }
+
+  written = Eventsourcingdb.write_events(client, [event])
+
+  case written do
+    {:ok, events} -> # ...
+    {:error, type, reason} -> # ..
+  end
+  ```
+
+  ### Using the `IsSubjectPristine` precondition
+
+  If you only want to write events in case a subject (such as `/books/42`) does not yet have any events, use the `IsSubjectPristine` precondition to create a precondition and pass it in a vector as the second argument:
+
+  ```elixir
+  written = Eventsourcingdb.write_events(
+    client,
+    [event],
+    [%Eventsourcingdb.IsSubjectPristine{subject: "/books/42"}]
+  )
+
+  case written do
+    {:ok, events} -> # ...
+    {:error, type, reason} -> # ..
+  end
+  ```
+
+  ### Using the `IsSubjectPopulated` precondition
+
+  If you only want to write events in case a subject (such as `/books/42`) already has at least one event, use the `IsSubjectPopulated` precondition to create a precondition and pass it in a vector as the second argument:
+
+  ```elixir
+  written = Eventsourcingdb.write_events(
+    client,
+    [event],
+    [%Eventsourcingdb.IsSubjectPopulated{subject: "/books/42"}]
+  )
+
+  case written do
+    {:ok, events} -> # ...
+    {:error, type, reason} -> # ..
+  end
+  ```
+
+  ### Using the `IsSubjectOnEventId` precondition
+
+  If you only want to write events in case the last event of a subject (such as `/books/42`) has a specific ID (e.g., `0`), use the `IsSubjectOnEventId` precondition to create a precondition and pass it in a vector as the second argument:
+
+  ```elixir
+  written = Eventsourcingdb.write_events(
+    client,
+    [event],
+    [%Eventsourcingdb.IsSubjectOnEventId{subject: "/books/42", event_id: "0"}]
+  )
+
+  case written do
+    {:ok, events} -> # ...
+    {:error, type, reason} -> # ..
+  end
+  ```
+
+  *Note that according to the CloudEvents standard, event IDs must be of type string.*
+
+  ### Using the `IsEventQLQueryTrue` precondition
+
+  If you want to write events depending on an EventQL query, use the `IsEventQLQueryTrue` precondition to create a precondition and pass it in a vector as the second argument:
+
+  ```elixir
+  written = Eventsourcingdb.write_events(
+    client,
+    [event],
+    [%Eventsourcingdb.IsEventQLQueryTrue{
+      query: "FROM e IN events WHERE e.type == 'io.eventsourcingdb.library.book-borrowed' PROJECT INTO COUNT () < 10"
+     }]
+  )
+
+  case written do
+    {:ok, events} -> # ...
+    {:error, type, reason} -> # ..
+  end
+  ```
+  """
   @spec write_events(Client.t(), maybe_improper_list(), any()) :: response(Event.t())
   def write_events(client, events, preconditions \\ []) when is_list(events) do
     request_one_shot(client, WriteEvents.new(events, preconditions))
@@ -68,23 +179,232 @@ defmodule Eventsourcingdb do
     request_one_shot!(client, WriteEvents.new(events, preconditions))
   end
 
+  @doc """
+  Reading Events
+
+  To read all events of a subject, call the `read_events` function with the
+  subject and an options object.
+
+  The function returns a stream from which you can retrieve one event at a time:
+
+  ```elixir
+  result = Eventsourcingdb.read_events(client, "/books/42")
+
+  result
+  |> Stream.map(fn event ->
+    # ...
+  end)
+  |> Stream.run()
+  ```
+
+  ### Reading From Subjects Recursively
+
+  If you want to read not only all the events of a subject, but also the events of all nested subjects, set the `recursive` option to `true`:
+
+  ```elixir
+  result = Eventsourcingdb.read_events(
+    client,
+    "/books/42",
+    %Eventsourcingdb.ReadEventsOptions{recursive: true}
+  )
+  ```
+
+  ### Reading in Anti-Chronological Order
+
+  By default, events are read in chronological order. To read in anti-chronological order, provide the `order` option and set it using the `:antichronological` ordering:
+
+  ```elixir
+  result = Eventsourcingdb.read_events(
+    client,
+    "/books/42",
+    %Eventsourcingdb.ReadEventsOptions{
+      recursive: false,
+      order: :antichronological
+    }
+  )
+  ```
+
+  *Note that you can also use the `Chronological` ordering to explicitly enforce the default order.*
+
+  ### Specifying Bounds
+
+  Sometimes you do not want to read all events, but only a range of events. For that, you can specify the `lower_bound` and `upper_bound` options – either one of them or even both at the same time.
+
+  Specify the ID and whether to include or exclude it, for both the lower and upper bound:
+
+  ```elixir
+  result = Eventsourcingdb.read_events(
+    client,
+    "/books/42",
+    %Eventsourcingdb.ReadEventsOptions{
+      recursive: false,
+      lower_bound: %Eventsourcingdb.BoundOptions{
+        type: :inclusive,
+        id: "100"
+      },
+      upper_bound: %Eventsourcingdb.BoundOptions{
+        type: :exclusive,
+        id: "200"
+      }
+    }
+  )
+  ```
+
+  ### Starting From the Latest Event of a Given Type
+
+  To read starting from the latest event of a given type, provide the `from_latest_event` option and specify the subject, the type, and how to proceed if no such event exists.
+
+  Possible options are `:read_nothing`, which skips reading entirely, or `:read_everything`, which effectively behaves as if `from_latest_event` was not specified:
+
+  ```elixir
+  result = Eventsourcingdb.read_events(
+    client,
+    "/books/42",
+    %Eventsourcingdb.ReadEventsOptions{
+      recursive: false,
+      from_latest_event: %Eventsourcingdb.FromLatestEventOptions{
+        subject: "/books/42",
+        type: "io.eventsourcingdb.library.book-borrowed"
+        if_event_is_missing: :read_everything
+      }
+    }
+  )
+  ```
+
+  *Note that `from_latest_event` and `lower_bound` can not be provided at the sametime.*
+  """
   @spec read_events(Client.t(), String.t(), ReadEventsOptions.t() | nil) ::
           stream_response(Event.t())
   def read_events(client, subject, options \\ nil) do
     request_stream(client, ReadEvents.new(subject, options))
   end
 
+  @doc """
+  Observing Events
+
+  To observe all events of a subject, call the `observe_events` function with the subject.
+
+  The function returns a stream from which you can retrieve one event at a time:
+
+  ```elixir
+  result = Eventsourcingdb.observe_events("/books/42")
+
+  result
+  |> Stream.map(fn event ->
+    # ...
+  end)
+  |> Stream.run()
+  ```
+
+  ### Observing From Subjects Recursively
+
+  If you want to observe not only all the events of a subject, but also the events of all nested subjects, set the `recursive` option to `true`:
+
+  ```elixir
+  result = Eventsourcingdb.observe_events(
+    "/books/42",
+    %Eventsourcingdb.ObserveEventsOptions{
+      recursive: true
+    }
+  )
+  ```
+
+  This also allows you to observe *all* events ever written. To do so, provide `/`
+  as the subject and set `recursive` to `true`, since all subjects are nested
+  under the root subject.
+
+  ### Specifying Bounds
+
+  Sometimes you do not want to observe all events, but only a range of events. For that, you can specify the `lower_bound` option.
+
+  Specify the ID and whether to include or exclude it:
+
+  ```elixir
+  result = Eventsourcingdb.observe_events(
+    "/books/42",
+    %Eventsourcingdb.ObserveEventsOptions{
+      recursive: false,
+      lower_bound: %Eventsourcingdb.BoundOptions{
+        type: :inclusive,
+        id: "100"
+      }
+    }
+  )
+  ```
+
+  ### Starting From the Latest Event of a Given Type
+
+  To observe starting from the latest event of a given type, provide the `from_latest_event` option and specify the subject, the type, and how to proceed if no such event exists.
+
+  Possible options are `:wait_for_event`, which waits for an event of the given type to happen, or `:read_everything`, which effectively behaves as if `from_latest_event` was not specified:
+
+  ```elixir
+  result = Eventsourcingdb.observe_events(
+    "/books/42",
+    %Eventsourcingdb.ObserveEventsOptions{
+      recursive: false,
+      from_latest_event: %Eventsourcingdb.FromLatestEvevntOptions{
+        subject: "/books/42",
+        type: "io.eventsourcingdb.library.book-borrowed",
+        if_event_is_missing: :read_everything
+      }
+    }
+  )
+  ```
+
+  *Note that `from_latest_event` and `lower_bound` can not be provided at the same time.*
+  """
   @spec observe_events(Client.t(), String.t(), ObserveEventsOptions.t() | nil) ::
           stream_response(Event.t())
   def observe_events(client, subject, options \\ nil) do
     request_stream(client, ObserveEvents.new(subject, options))
   end
 
+  @doc """
+  Running EventQL Queries
+
+  To run an EventQL query, call the `run_eventql_query` function and provide the query as argument. The function returns a stream.
+
+  ```elixir
+  result = Eventsourcingdb.run_eventql_query("FROM e IN events PROJECT INTO e")
+
+  result
+  |> Stream.map(fn event ->
+    # ...
+  end)
+  |> Stream.run()
+  ```
+  """
   @spec run_eventql_query(Client.t(), String.t()) :: stream_response(any())
   def run_eventql_query(client, query) do
     request_stream(client, RunEventQL.new(query))
   end
 
+  @doc """
+  Registering an Event Schema
+
+  To register an event schema, call the `register_event_schema` function and hand over an event type and the desired schema:
+
+  ```elixir
+  Eventsourcingdb.register_event_schema(
+    "io.eventsourcingdb.library.book-acquired",
+    %{
+      "type" => "object",
+      "properties" => %{
+        "title" =>  %{ "type": "string" },
+        "author" => %{ "type": "string" },
+        "isbn" =>   %{ "type": "string" },
+      },
+      "required" => [
+        "title",
+        "author",
+        "isbn",
+      ],
+      "additionalProperties" => false,
+    }),
+  )
+  ```
+  """
   @spec register_event_schema(Client.t(), String.t(), map()) :: response(ManagementEvent.t())
   def register_event_schema(client, event_type, schema) do
     request_one_shot(client, RegisterEventSchema.new(event_type, schema))
@@ -95,11 +415,40 @@ defmodule Eventsourcingdb do
     request_one_shot!(client, RegisterEventSchema.new(event_type, schema))
   end
 
+  @doc """
+  Reading Subjects
+
+  To list all subjects, call the `list_subjects` function with `/` as the base subject. The function returns a stream from which you can retrieve one subject at a time:
+
+  ```elixir
+  result = Eventsourcingdb.read_subjects(client, "/")
+
+  result
+  |> Stream.map(fn event ->
+    # ...
+  end)
+  |> Stream.run()
+  ```
+  """
   @spec read_subjects(Client.t(), String.t()) :: stream_response(String.t())
   def read_subjects(client, base_subject) do
     request_stream(client, ReadSubjects.new(base_subject))
   end
 
+  @doc """
+  Reading a Specific Event Type
+
+  To list a specific event type, call the `read_event_type` function. The function returns the detailed event type, which includes the schema:
+
+  ```elixir
+  result = Eventsourcingdb.read_subjects(client, "io.eventsourcingdb.library.book-acquired")
+
+  case result do
+    {:ok, event_type} -> # ...
+    {:error, error_type, reason} -> # ...
+  end
+  ```
+  """
   @spec read_event_type(Client.t(), String.t()) :: response(EventType.t())
   def read_event_type(client, event_type) do
     request_one_shot(client, ReadEventType.new(event_type))

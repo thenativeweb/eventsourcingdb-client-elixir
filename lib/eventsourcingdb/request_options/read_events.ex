@@ -1,4 +1,7 @@
 defmodule Eventsourcingdb.ReadEventsOptions do
+  @moduledoc """
+  Read events filter options
+  """
   use TypedStruct
 
   typedstruct do

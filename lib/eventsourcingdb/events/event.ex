@@ -1,4 +1,7 @@
 defmodule Eventsourcingdb.Event do
+  @moduledoc """
+  An Event coming from the server.
+  """
   alias Eventsourcingdb.Event
   use TypedStruct
 

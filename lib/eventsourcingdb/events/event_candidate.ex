@@ -1,4 +1,7 @@
 defmodule Eventsourcingdb.EventCandidate do
+  @moduledoc """
+  An event about to be written to the server.
+  """
   use TypedStruct
 
   typedstruct do

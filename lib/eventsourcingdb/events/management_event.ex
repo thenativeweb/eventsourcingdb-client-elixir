@@ -1,4 +1,7 @@
 defmodule Eventsourcingdb.ManagementEvent do
+  @moduledoc """
+  Representing management events around EventSourcingDB.
+  """
   alias Eventsourcingdb.ManagementEvent
   use TypedStruct
 

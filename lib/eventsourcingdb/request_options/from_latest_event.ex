@@ -1,8 +1,11 @@
 defmodule Eventsourcingdb.FromLatestEventOptions do
+  @moduledoc """
+  Reading events from when a certain event occured.
+  """
   use TypedStruct
 
   typedstruct enforce: true do
-    field :if_event_is_missing, :read_everything | :read_nothing
+    field :if_event_is_missing, :read_everything | :read_nothing | :wait_for_event
     field :subject, String.t()
     field :type, String.t()
   end
@@ -26,6 +29,7 @@ defmodule Eventsourcingdb.FromLatestEventOptions do
             case value.if_event_is_missing do
               :read_everything -> "read-everything"
               :read_nothing -> "read-nothing"
+              :wait_for_event -> "wait-for-event"
             end,
           "subject" => value.subject,
           "type" => value.type
