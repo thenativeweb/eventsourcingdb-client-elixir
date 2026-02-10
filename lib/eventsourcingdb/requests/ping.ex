@@ -1,4 +1,5 @@
 defmodule Eventsourcingdb.Requests.Ping do
+  @moduledoc false
   alias Eventsourcingdb.{OneShotRequest, Endpoint}
 
   use Endpoint

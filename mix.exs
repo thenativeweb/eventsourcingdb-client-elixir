@@ -1,4 +1,17 @@
 defmodule Eventsourcingdb.MixProject do
+  alias Eventsourcingdb.ObserveEventsOptions
+  alias Eventsourcingdb.ReadEventsOptions
+  alias Eventsourcingdb.FromLatestEventOptions
+  alias Eventsourcingdb.BoundOptions
+  alias Eventsourcingdb.TestContainer
+  alias Eventsourcingdb.IsSubjectPristine
+  alias Eventsourcingdb.IsSubjectPopulated
+  alias Eventsourcingdb.IsSubjectOnEventId
+  alias Eventsourcingdb.IsEventQLTrue
+  alias Eventsourcingdb.ManagementEvent
+  alias Eventsourcingdb.EventType
+  alias Eventsourcingdb.EventCandidate
+  alias Eventsourcingdb.Event
   use Mix.Project
 
   def project do
@@ -9,7 +22,13 @@ defmodule Eventsourcingdb.MixProject do
       start_permanent: Mix.env() == :prod,
       aliases: aliases(),
       deps: deps(),
-      elixirc_paths: elixirc_paths(Mix.env())
+      elixirc_paths: elixirc_paths(Mix.env()),
+
+      # Docs
+      name: "EventSourcingDB",
+      source_url: "https://github.com/thenativeweb/eventsourcingdb-client-elixir",
+      homepage_url: "https://eventsourcingdb.io",
+      docs: &docs/0
     ]
   end
 
@@ -23,6 +42,38 @@ defmodule Eventsourcingdb.MixProject do
     ]
   end
 
+  defp docs do
+    [
+      # can be changed to a module name, if you prefer
+      main: "readme",
+      # logo: "path/to/logo.png",
+      extras: ["README.md"],
+      groups_for_modules: [
+        Events: [
+          Event,
+          EventCandidate,
+          EventType,
+          ManagementEvent
+        ],
+        Preconditions: [
+          IsEventQLTrue,
+          IsSubjectOnEventId,
+          IsSubjectPopulated,
+          IsSubjectPristine
+        ],
+        "Request Options": [
+          BoundOptions,
+          FromLatestEventOptions,
+          ObserveEventsOptions,
+          ReadEventsOptions
+        ],
+        Testing: [
+          TestContainer
+        ]
+      ]
+    ]
+  end
+
   # Run "mix help deps" to learn about dependencies.
   defp deps do
     [
@@ -31,7 +82,8 @@ defmodule Eventsourcingdb.MixProject do
       {:ex_json_schema, "~> 0.11.2"},
       {:typedstruct, "~> 0.5"},
       {:testcontainers, "~> 1.14.1", only: [:test, :dev]},
-      {:credo, "~> 1.7", only: [:dev, :test], runtime: false}
+      {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
+      {:ex_doc, "~> 0.40.1", only: :dev, runtime: false, warn_if_outdated: true}
     ]
   end
 

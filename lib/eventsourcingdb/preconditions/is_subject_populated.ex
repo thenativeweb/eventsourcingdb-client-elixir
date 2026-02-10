@@ -1,4 +1,10 @@
-defmodule Eventsourcingdb.Preconditions.IsSubjectPopulated do
+defmodule Eventsourcingdb.IsSubjectPopulated do
+  @moduledoc """
+  Precondition for writing events to ensure the subject **already has at
+  least one event**
+
+  Useful when you want to update or modify an existing subject.
+  """
   use TypedStruct
 
   typedstruct do

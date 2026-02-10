@@ -1,4 +1,5 @@
 defmodule Eventsourcingdb.OneShotRequest do
+  @moduledoc false
   alias Eventsourcingdb.OneShotRequest
 
   @callback validate_response({:ok, Req.Response.t()} | {:error, Exception.t()}) ::

@@ -1,8 +1,8 @@
 defmodule EventsourcingdbTest.WriteEvents do
-  alias Eventsourcingdb.Preconditions.IsEventQLTrue
-  alias Eventsourcingdb.Preconditions.IsSubjectOnEventId
-  alias Eventsourcingdb.Preconditions.IsSubjectPopulated
-  alias Eventsourcingdb.Preconditions.IsSubjectPristine
+  alias Eventsourcingdb.IsEventQLTrue
+  alias Eventsourcingdb.IsSubjectOnEventId
+  alias Eventsourcingdb.IsSubjectPopulated
+  alias Eventsourcingdb.IsSubjectPristine
   alias Eventsourcingdb.TestContainer
   import EventsourcingdbTest.Utils
   use ExUnit.Case

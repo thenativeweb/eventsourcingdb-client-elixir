@@ -1,6 +1,7 @@
 defmodule EventsourcingdbTest.Utils do
-  alias Eventsourcingdb.Events.Event
-  alias Eventsourcingdb.Events.EventCandidate
+  @moduledoc false
+  alias Eventsourcingdb.Event
+  alias Eventsourcingdb.EventCandidate
   import ExUnit.Assertions
 
   @spec create_test_eventcandidate(String.t(), map()) :: EventCandidate.t()

@@ -1,4 +1,6 @@
 defmodule Eventsourcingdb.Requests.RunEventQL do
+  @moduledoc false
+  alias Eventsourcingdb.Requests.RunEventQL
   alias Eventsourcingdb.{StreamRequest, Endpoint}
 
   use Endpoint
@@ -19,7 +21,7 @@ defmodule Eventsourcingdb.Requests.RunEventQL do
     field :query, String.t(), enforce: true
   end
 
-  @spec new(String.t()) :: Eventsourcingdb.Requests.RunEventQL.t()
+  @spec new(String.t()) :: RunEventQL.t()
   def new(query) do
     struct!(__MODULE__, query: query)
   end
