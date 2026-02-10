@@ -122,7 +122,6 @@ defmodule Eventsourcingdb.TestContainer do
 
   def with_signing_key(%__MODULE__{} = config) do
     {_, signing_key} = :crypto.generate_key(:ed25519, [])
-    IO.inspect(signing_key, label: "signing key")
     %{config | signing_key: signing_key}
   end
 
