@@ -121,7 +121,8 @@ defmodule EventSourcingDB.TestContainer do
   end
 
   def with_signing_key(%__MODULE__{} = config) do
-    {_, signing_key} = :crypto.generate_key(:ed25519, [])
+    signing_key = JOSE.JWK.generate_key({:okp, :Ed25519})
+
     %{config | signing_key: signing_key}
   end
 
@@ -162,7 +163,8 @@ defmodule EventSourcingDB.TestContainer do
   """
   def get_api_token(%Container{} = container), do: container.environment[:ESDB_API_TOKEN]
 
-  def get_signing_key(%Container{} = container), do: container.environment[:ESDB_SIGNING_KEY]
+  def get_signing_key(%Container{} = container),
+    do: Base.url_decode64!(container.environment[:ESDB_SIGNING_KEY], padding: false)
 
   @doc """
   Gets the EventSourcingDB client for the given container
@@ -184,46 +186,77 @@ defmodule EventSourcingDB.TestContainer do
   end
 
   defimpl ContainerBuilder do
-    alias EventSourcingDB.Client
+    alias Testcontainers.Docker
     alias Testcontainers.HttpWaitStrategy
+    alias Eventsourcingdb.Client
 
     import Container
 
     @image_name "thenativeweb/eventsourcingdb"
 
     @impl true
-    def build(builder) do
+    def build(config) do
+      IO.inspect(config, label: "build, config")
+
+      cmd = [
+        "run",
+        "--api-token",
+        config.api_token,
+        "--data-directory-temporary",
+        "--http-enabled",
+        "--https-enabled=false"
+      ]
+
       container =
-        new("#{@image_name}:#{builder.image_tag}")
-        |> with_exposed_port(builder.port)
-        |> with_environment(:ESDB_PORT, Integer.to_string(builder.port))
-        |> with_environment(:ESDB_API_TOKEN, builder.api_token)
+        new("#{@image_name}:#{config.image_tag}")
+        |> with_exposed_port(config.port)
+        |> with_environment(:ESDB_PORT, Integer.to_string(config.port))
+        |> with_environment(:ESDB_API_TOKEN, config.api_token)
         |> with_waiting_strategy(
-          HttpWaitStrategy.new("/api/v1/ping", builder.port,
+          HttpWaitStrategy.new("/api/v1/ping", config.port,
             timeout: 10_000,
             status_code: 200
           )
         )
-        |> with_cmd([
-          "run",
-          "--api-token",
-          builder.api_token,
-          "--data-directory-temporary",
-          "--http-enabled",
-          "--https-enabled=false"
-        ])
 
-      case builder.signing_key do
-        true ->
-          container
-          |> with_environment(:ESDB_SIGNING_KEY, builder.signing_key)
+      container =
+        if config.signing_key do
+          {_module, key_map} = JOSE.JWK.to_map(config.signing_key)
 
-        _ ->
           container
-      end
+          |> with_environment(
+            :ESDB_SIGNING_KEY,
+            Jason.encode!(key_map)
+          )
+        else
+          container
+        end
+
+      cmd =
+        if config.signing_key do
+          cmd ++
+            [
+              "--signing-key-file=/etc/esdb/signing_key.pem"
+            ]
+        else
+          cmd
+        end
+
+      IO.inspect(cmd, label: "cmd")
+
+      container |> with_cmd(cmd)
     end
 
     @impl true
-    def after_start(_config, _container, _conn), do: :ok
+    def after_start(config, container, conn) do
+      # see: https://github.com/testcontainers/testcontainers-elixir/issues/240
+      if config.signing_key do
+        {_, pem} = JOSE.JWK.to_pem(config.signing_key)
+
+        Docker.Api.put_file(container.container_id, conn, "/etc/esdb/", "signing-key.pem", pem)
+      end
+
+      :ok
+    end
   end
 end
