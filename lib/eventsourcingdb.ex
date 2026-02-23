@@ -567,7 +567,9 @@ defmodule Eventsourcingdb do
           {:error, reason} ->
             {:error, reason}
 
-            # nil -> do nothing when its nil
+          # handle heartbeat case
+          nil ->
+            {[], response}
         end
 
       {:error, reason} ->
