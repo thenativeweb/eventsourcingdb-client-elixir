@@ -195,11 +195,10 @@ defmodule Eventsourcingdb do
   ```elixir
   result = Eventsourcingdb.read_events(client, "/books/42")
 
-  result
-  |> Stream.map(fn event ->
-    # ...
-  end)
-  |> Stream.run()
+  case result do
+    {:ok, events} -> Enum.to_list(events)
+    {:error, type, reason} -> # handle error here
+  end
   ```
 
   ### Reading From Subjects Recursively
@@ -300,11 +299,10 @@ defmodule Eventsourcingdb do
   ```elixir
   result = Eventsourcingdb.observe_events("/books/42")
 
-  result
-  |> Stream.map(fn event ->
-    # ...
-  end)
-  |> Stream.run()
+  case result do
+    {:ok, events} -> Enum.to_list(events)
+    {:error, type, reason} -> # handle error here
+  end
   ```
 
   ### Observing From Subjects Recursively
@@ -385,11 +383,10 @@ defmodule Eventsourcingdb do
   ```elixir
   result = Eventsourcingdb.run_eventql_query("FROM e IN events PROJECT INTO e")
 
-  result
-  |> Stream.map(fn event ->
-    # ...
-  end)
-  |> Stream.run()
+  case result do
+    {:ok, events} -> Enum.to_list(events)
+    {:error, type, reason} -> # handle error here
+  end
   ```
   """
   @spec run_eventql_query(Client.t(), String.t()) :: stream_response(any())
@@ -445,11 +442,10 @@ defmodule Eventsourcingdb do
   ```elixir
   result = Eventsourcingdb.read_subjects(client, "/")
 
-  result
-  |> Stream.map(fn event ->
-    # ...
-  end)
-  |> Stream.run()
+  case result do
+    {:ok, subjects} -> Enum.to_list(subjects)
+    {:error, type, reason} -> # handle error here
+  end
   ```
   """
   @spec read_subjects(Client.t(), String.t()) :: stream_response(String.t())
@@ -468,10 +464,10 @@ defmodule Eventsourcingdb do
   To list a specific event type, call the `read_event_type` function. The function returns the detailed event type, which includes the schema:
 
   ```elixir
-  result = Eventsourcingdb.read_subjects(client, "io.eventsourcingdb.library.book-acquired")
+  result = Eventsourcingdb.read_event_types(client, "io.eventsourcingdb.library.book-acquired")
 
   case result do
-    {:ok, event_type} -> # ...
+    {:ok, event_types} -> Enum.to_list(event_types)
     {:error, error_type, reason} -> # ...
   end
   ```
