@@ -146,11 +146,10 @@ The function returns a stream from which you can retrieve one event at a time:
 ```elixir
 result = Eventsourcingdb.read_events(client, "/books/42")
 
-result
-|> Stream.map(fn event -> 
-  # ...
-end)
-|> Stream.run()
+case result do
+  {:ok, events} -> Enum.to_list(events)
+  {:error, type, reason} -> # handle error here
+end
 ```
 
 ### Reading From Subjects Recursively
@@ -236,11 +235,10 @@ To run an EventQL query, call the `run_eventql_query` function and provide the q
 ```elixir
 result = Eventsourcingdb.run_eventql_query(client, "FROM e IN events PROJECT INTO e")
 
-result
-|> Stream.map(fn event -> 
-  # ...
-end)
-|> Stream.run()
+case result do
+  {:ok, events} -> Enum.to_list(events)
+  {:error, type, reason} -> # handle error here
+end
 ```
 
 ## Observing Events
@@ -252,11 +250,10 @@ The function returns a stream from which you can retrieve one event at a time:
 ```elixir
 result = Eventsourcingdb.observe_events(client, "/books/42")
 
-result
-|> Stream.map(fn event -> 
-  # ...
-end)
-|> Stream.run()
+case result do
+  {:ok, events} -> Enum.to_list(events)
+  {:error, type, reason} -> # handle error here
+end
 ```
 
 ### Observing From Subjects Recursively
@@ -352,11 +349,10 @@ To list all subjects, call the `list_subjects` function with `/` as the base sub
 ```elixir
 result = Eventsourcingdb.read_subjects(client, "/")
 
-result
-|> Stream.map(fn event -> 
-  # ...
-end)
-|> Stream.run()
+case result do
+  {:ok, subjects} -> Enum.to_list(subjects)
+  {:error, type, reason} -> # handle error here
+end
 ```
 
 If you only want to list subjects within a specific branch, provide the desired base subject instead:
@@ -370,10 +366,10 @@ result = Eventsourcingdb.read_subjects(client, "/books")
 To list a specific event type, call the `read_event_type` function. The function returns the detailed event type, which includes the schema:
 
 ```elixir
-result = Eventsourcingdb.read_subjects(client, "io.eventsourcingdb.library.book-acquired")
+result = Eventsourcingdb.read_event_types(client, "io.eventsourcingdb.library.book-acquired")
 
 case result do
-  {:ok, event_type} -> # ...
+  {:ok, event_types} -> Enum.to_list(event_types)
   {:error, error_type, reason} -> # ...
 end
 ```

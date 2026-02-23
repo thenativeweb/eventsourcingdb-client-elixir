@@ -13,7 +13,7 @@ defmodule EventsourcingdbTest.ObserveEvents do
     event_candidate = create_test_eventcandidate("/test", %{"value" => 1})
 
     written = Eventsourcingdb.write_events!(client, [event_candidate])
-    event = Eventsourcingdb.observe_events(client, "/test") |> Enum.at(0)
+    event = Eventsourcingdb.observe_events!(client, "/test") |> Enum.at(0)
 
     assert [event] == written
   end
@@ -21,7 +21,7 @@ defmodule EventsourcingdbTest.ObserveEvents do
   test "keep observing events", %{esdb: esdb} do
     client = TestContainer.get_client(esdb)
 
-    event_stream = Eventsourcingdb.observe_events(client, "/test")
+    event_stream = Eventsourcingdb.observe_events!(client, "/test")
 
     event_candidate = create_test_eventcandidate("/test", %{"value" => 1})
     written = Eventsourcingdb.write_events!(client, [event_candidate])

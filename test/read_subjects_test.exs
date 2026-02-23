@@ -9,7 +9,7 @@ defmodule EventsourcingdbTest.ReadSubjects do
 
   test "read no subjects when database is empty", %{esdb: esdb} do
     client = TestContainer.get_client(esdb)
-    result = Eventsourcingdb.read_subjects(client, "/")
+    result = Eventsourcingdb.read_subjects!(client, "/")
 
     assert Enum.empty?(result)
   end
@@ -24,7 +24,7 @@ defmodule EventsourcingdbTest.ReadSubjects do
 
     Eventsourcingdb.write_events!(client, event_candidates)
 
-    result = Eventsourcingdb.read_subjects(client, "/")
+    result = Eventsourcingdb.read_subjects!(client, "/")
 
     assert ["/", "/test", "/test/1", "/test/2"] == Enum.to_list(result)
   end
@@ -39,7 +39,7 @@ defmodule EventsourcingdbTest.ReadSubjects do
 
     Eventsourcingdb.write_events!(client, event_candidates)
 
-    result = Eventsourcingdb.read_subjects(client, "/test")
+    result = Eventsourcingdb.read_subjects!(client, "/test")
 
     assert ["/test", "/test/1", "/test/2"] == Enum.to_list(result)
   end

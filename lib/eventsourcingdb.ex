@@ -35,7 +35,12 @@ defmodule Eventsourcingdb do
   @typedoc """
   The response format for a request returning a stream
   """
-  @type stream_response(t) :: Enumerable.t(t)
+  @type stream_response(t) :: {:ok, Enumerable.t(t)} | {:error, any()}
+
+  @typedoc """
+  The response format for a force request returning a stream
+  """
+  @type stream_response!(t) :: Enumerable.t(t)
 
   @doc """
   Pings the DB instance to check if it is reachable.
@@ -190,11 +195,10 @@ defmodule Eventsourcingdb do
   ```elixir
   result = Eventsourcingdb.read_events(client, "/books/42")
 
-  result
-  |> Stream.map(fn event ->
-    # ...
-  end)
-  |> Stream.run()
+  case result do
+    {:ok, events} -> Enum.to_list(events)
+    {:error, type, reason} -> # handle error here
+  end
   ```
 
   ### Reading From Subjects Recursively
@@ -279,6 +283,12 @@ defmodule Eventsourcingdb do
     request_stream(client, ReadEvents.new(subject, options))
   end
 
+  @spec read_events!(Client.t(), String.t(), ReadEventsOptions.t() | nil) ::
+          stream_response!(Event.t())
+  def read_events!(client, subject, options \\ nil) do
+    request_stream!(client, ReadEvents.new(subject, options))
+  end
+
   @doc """
   Observing Events
 
@@ -289,11 +299,10 @@ defmodule Eventsourcingdb do
   ```elixir
   result = Eventsourcingdb.observe_events("/books/42")
 
-  result
-  |> Stream.map(fn event ->
-    # ...
-  end)
-  |> Stream.run()
+  case result do
+    {:ok, events} -> Enum.to_list(events)
+    {:error, type, reason} -> # handle error here
+  end
   ```
 
   ### Observing From Subjects Recursively
@@ -360,6 +369,12 @@ defmodule Eventsourcingdb do
     request_stream(client, ObserveEvents.new(subject, options))
   end
 
+  @spec observe_events!(Client.t(), String.t(), ObserveEventsOptions.t() | nil) ::
+          stream_response!(Event.t())
+  def observe_events!(client, subject, options \\ nil) do
+    request_stream!(client, ObserveEvents.new(subject, options))
+  end
+
   @doc """
   Running EventQL Queries
 
@@ -368,16 +383,20 @@ defmodule Eventsourcingdb do
   ```elixir
   result = Eventsourcingdb.run_eventql_query("FROM e IN events PROJECT INTO e")
 
-  result
-  |> Stream.map(fn event ->
-    # ...
-  end)
-  |> Stream.run()
+  case result do
+    {:ok, events} -> Enum.to_list(events)
+    {:error, type, reason} -> # handle error here
+  end
   ```
   """
   @spec run_eventql_query(Client.t(), String.t()) :: stream_response(any())
   def run_eventql_query(client, query) do
     request_stream(client, RunEventQL.new(query))
+  end
+
+  @spec run_eventql_query!(Client.t(), String.t()) :: stream_response!(any())
+  def run_eventql_query!(client, query) do
+    request_stream!(client, RunEventQL.new(query))
   end
 
   @doc """
@@ -423,16 +442,20 @@ defmodule Eventsourcingdb do
   ```elixir
   result = Eventsourcingdb.read_subjects(client, "/")
 
-  result
-  |> Stream.map(fn event ->
-    # ...
-  end)
-  |> Stream.run()
+  case result do
+    {:ok, subjects} -> Enum.to_list(subjects)
+    {:error, type, reason} -> # handle error here
+  end
   ```
   """
   @spec read_subjects(Client.t(), String.t()) :: stream_response(String.t())
   def read_subjects(client, base_subject) do
     request_stream(client, ReadSubjects.new(base_subject))
+  end
+
+  @spec read_subjects!(Client.t(), String.t()) :: stream_response!(String.t())
+  def read_subjects!(client, base_subject) do
+    request_stream!(client, ReadSubjects.new(base_subject))
   end
 
   @doc """
@@ -441,10 +464,10 @@ defmodule Eventsourcingdb do
   To list a specific event type, call the `read_event_type` function. The function returns the detailed event type, which includes the schema:
 
   ```elixir
-  result = Eventsourcingdb.read_subjects(client, "io.eventsourcingdb.library.book-acquired")
+  result = Eventsourcingdb.read_event_types(client, "io.eventsourcingdb.library.book-acquired")
 
   case result do
-    {:ok, event_type} -> # ...
+    {:ok, event_types} -> Enum.to_list(event_types)
     {:error, error_type, reason} -> # ...
   end
   ```
@@ -464,35 +487,62 @@ defmodule Eventsourcingdb do
     request_stream(client, ReadEventTypes.new())
   end
 
+  @spec read_event_types!(Client.t()) :: stream_response!(EventType.t())
+  def read_event_types!(client) do
+    request_stream!(client, ReadEventTypes.new())
+  end
+
   #
   # region Requests
   #
 
+  @spec request_stream!(Client.t(), struct()) :: any()
+  defp request_stream!(client, request) do
+    result = request_stream(client, request)
+
+    case result do
+      {:ok, stream} -> stream
+      {:error, type, reason} -> raise(type, reason)
+    end
+  end
+
   defp request_stream(client, request) do
-    Stream.resource(
-      fn ->
-        response =
-          client
-          |> build_request(request)
-          |> Req.request(into: :self)
+    case open_stream(client, request) do
+      {:ok, response} ->
+        stream =
+          Stream.resource(
+            fn -> response end,
+            fn response -> handle_stream(response, request) end,
+            fn
+              %Req.Response{} = resp ->
+                Req.cancel_async_response(resp)
 
-        with {:ok} <- validate_transmission(response),
-             {:ok} <- validate_server_headers(response),
-             {:ok, resp} <- validate_response(response) do
-          resp
-        end
-      end,
-      fn
-        response -> handle_stream(response, request)
-      end,
-      fn
-        %Req.Response{} = resp ->
-          Req.cancel_async_response(resp)
+              other ->
+                other
+            end
+          )
 
-        other ->
-          other
-      end
-    )
+        {:ok, stream}
+
+      {:error, type, reason} ->
+        {:error, type, reason}
+    end
+  end
+
+  defp open_stream(client, request) do
+    response =
+      client
+      |> build_request(request)
+      |> Req.request(into: :self)
+
+    # credo warns the last two statements to be redundant, but I can't figure
+    # out why it says so (they aren't)
+    # credo:disable-for-lines:1
+    with {:ok} <- validate_transmission(response),
+         {:ok} <- validate_server_headers(response),
+         {:ok, resp} <- validate_response(response) do
+      {:ok, resp}
+    end
   end
 
   defp handle_stream(response, request) do
@@ -517,7 +567,9 @@ defmodule Eventsourcingdb do
           {:error, reason} ->
             {:error, reason}
 
-            # nil -> do nothing when its nil
+          # handle heartbeat case
+          nil ->
+            {[], response}
         end
 
       {:error, reason} ->

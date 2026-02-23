@@ -11,7 +11,7 @@ defmodule EventsourcingdbTest.RunEventQLQuery do
     client = TestContainer.get_client(esdb)
 
     rows =
-      Eventsourcingdb.run_eventql_query(
+      Eventsourcingdb.run_eventql_query!(
         client,
         "FROM e IN events ORDER BY e.time DESC TOP 100 PROJECT INTO e"
       )
@@ -30,7 +30,7 @@ defmodule EventsourcingdbTest.RunEventQLQuery do
     Eventsourcingdb.write_events!(client, event_candidates)
 
     rows =
-      Eventsourcingdb.run_eventql_query(
+      Eventsourcingdb.run_eventql_query!(
         client,
         "FROM e IN events PROJECT INTO e"
       )
@@ -48,7 +48,7 @@ defmodule EventsourcingdbTest.RunEventQLQuery do
     Eventsourcingdb.write_events!(client, [create_test_eventcandidate("/test", %{"value" => 42})])
 
     rows =
-      Eventsourcingdb.run_eventql_query(
+      Eventsourcingdb.run_eventql_query!(
         client,
         "FROM e IN events PROJECT INTO e.data.value"
       )
@@ -64,7 +64,7 @@ defmodule EventsourcingdbTest.RunEventQLQuery do
     Eventsourcingdb.write_events!(client, [create_test_eventcandidate("/test", %{"value" => 42})])
 
     rows =
-      Eventsourcingdb.run_eventql_query(
+      Eventsourcingdb.run_eventql_query!(
         client,
         "FROM e IN events PROJECT INTO e.data.value > 0"
       )
@@ -82,7 +82,7 @@ defmodule EventsourcingdbTest.RunEventQLQuery do
     ])
 
     rows =
-      Eventsourcingdb.run_eventql_query(
+      Eventsourcingdb.run_eventql_query!(
         client,
         "FROM e IN events PROJECT INTO e.data.value"
       )
