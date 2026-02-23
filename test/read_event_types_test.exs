@@ -12,7 +12,7 @@ defmodule EventsourcingdbTest.ReadEventTypes do
   test "reads no event types if the database is empty", %{esdb: esdb} do
     client = TestContainer.get_client(esdb)
 
-    result = Eventsourcingdb.read_event_types(client)
+    result = Eventsourcingdb.read_event_types!(client)
 
     assert Enum.empty?(result)
   end
@@ -31,7 +31,7 @@ defmodule EventsourcingdbTest.ReadEventTypes do
       }
     ])
 
-    result = Eventsourcingdb.read_event_types(client) |> Enum.to_list()
+    result = Eventsourcingdb.read_event_types!(client) |> Enum.to_list()
 
     assert result ==
              [
@@ -66,7 +66,7 @@ defmodule EventsourcingdbTest.ReadEventTypes do
 
     Eventsourcingdb.register_event_schema(client, "io.eventsourcingdb.test", schema)
 
-    result = Eventsourcingdb.read_event_types(client) |> Enum.to_list()
+    result = Eventsourcingdb.read_event_types!(client) |> Enum.to_list()
 
     assert result ==
              [

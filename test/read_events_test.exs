@@ -1,4 +1,5 @@
 defmodule EventsourcingdbTest.ReadEvents do
+  alias Eventsourcingdb.Client
   alias Eventsourcingdb.FromLatestEventOptions
   alias Eventsourcingdb.BoundOptions
   alias Eventsourcingdb.ReadEventsOptions
@@ -11,9 +12,24 @@ defmodule EventsourcingdbTest.ReadEvents do
   container(:esdb, TestContainer.new())
 
   test "make read call", %{esdb: esdb} do
-    events = TestContainer.get_client(esdb) |> Eventsourcingdb.read_events("/")
+    result = TestContainer.get_client(esdb) |> Eventsourcingdb.read_events("/")
+    {:ok, events} = result
 
+    assert match?({:ok, _}, result)
     assert Enum.empty?(events)
+  end
+
+  test "read from unavailable server" do
+    client =
+      Client.new(
+        base_url: "http://localhost:12345",
+        api_token: "secrettoken",
+        req_options: [retry: false]
+      )
+
+    stream = Eventsourcingdb.read_events(client, "/")
+
+    assert match?({:error, :transmission_error, _}, stream)
   end
 
   test "make read call with event", %{esdb: esdb} do
@@ -22,7 +38,7 @@ defmodule EventsourcingdbTest.ReadEvents do
     written =
       Eventsourcingdb.write_events!(client, [create_test_eventcandidate("/test", %{"value" => 1})])
 
-    events = Eventsourcingdb.read_events(client, "/test") |> Enum.to_list()
+    events = Eventsourcingdb.read_events!(client, "/test") |> Enum.to_list()
 
     assert events == written
   end
@@ -35,7 +51,7 @@ defmodule EventsourcingdbTest.ReadEvents do
     written =
       Eventsourcingdb.write_events!(client, event_candidates)
 
-    events = Eventsourcingdb.read_events(client, "/test") |> Enum.to_list()
+    events = Eventsourcingdb.read_events!(client, "/test") |> Enum.to_list()
 
     assert events == written
   end
@@ -48,7 +64,7 @@ defmodule EventsourcingdbTest.ReadEvents do
     Eventsourcingdb.write_events!(client, [event_candidate])
     Eventsourcingdb.write_events!(client, [create_test_eventcandidate("/wrong", %{"value" => 1})])
 
-    events = Eventsourcingdb.read_events(client, "/test") |> Enum.to_list()
+    events = Eventsourcingdb.read_events!(client, "/test") |> Enum.to_list()
 
     assert length(events) == 1
     assert_event_match_eventcandidate(Enum.at(events, 0), event_candidate)
@@ -64,7 +80,7 @@ defmodule EventsourcingdbTest.ReadEvents do
       Eventsourcingdb.write_events!(client, [event_candidate_parent, event_candidate_child])
 
     events =
-      Eventsourcingdb.read_events(client, "/test", %ReadEventsOptions{recursive: true})
+      Eventsourcingdb.read_events!(client, "/test", %ReadEventsOptions{recursive: true})
       |> Enum.to_list()
 
     assert events == written
@@ -79,7 +95,7 @@ defmodule EventsourcingdbTest.ReadEvents do
     Eventsourcingdb.write_events!(client, [event_candidate_parent, event_candidate_child])
 
     events =
-      Eventsourcingdb.read_events(client, "/test", %ReadEventsOptions{recursive: false})
+      Eventsourcingdb.read_events!(client, "/test", %ReadEventsOptions{recursive: false})
       |> Enum.to_list()
 
     assert Enum.count(events) == 1
@@ -94,7 +110,7 @@ defmodule EventsourcingdbTest.ReadEvents do
     written =
       Eventsourcingdb.write_events!(client, event_candidates)
 
-    events = Eventsourcingdb.read_events(client, "/test") |> Enum.to_list()
+    events = Eventsourcingdb.read_events!(client, "/test") |> Enum.to_list()
 
     assert events == written
   end
@@ -107,7 +123,7 @@ defmodule EventsourcingdbTest.ReadEvents do
     written =
       Eventsourcingdb.write_events!(client, event_candidates)
 
-    events = Eventsourcingdb.read_events(client, "/test") |> Enum.to_list() |> Enum.reverse()
+    events = Eventsourcingdb.read_events!(client, "/test") |> Enum.to_list() |> Enum.reverse()
 
     assert events != written
   end
@@ -121,7 +137,7 @@ defmodule EventsourcingdbTest.ReadEvents do
     Eventsourcingdb.write_events!(client, [first_event, second_event])
 
     events =
-      Eventsourcingdb.read_events(client, "/test", %ReadEventsOptions{
+      Eventsourcingdb.read_events!(client, "/test", %ReadEventsOptions{
         lower_bound: %BoundOptions{
           id: "1",
           type: :inclusive
@@ -142,7 +158,7 @@ defmodule EventsourcingdbTest.ReadEvents do
     Eventsourcingdb.write_events!(client, [first_event, second_event])
 
     events =
-      Eventsourcingdb.read_events(client, "/test", %ReadEventsOptions{
+      Eventsourcingdb.read_events!(client, "/test", %ReadEventsOptions{
         upper_bound: %BoundOptions{
           id: "0",
           type: :inclusive
@@ -161,7 +177,7 @@ defmodule EventsourcingdbTest.ReadEvents do
     Eventsourcingdb.write_events!(client, event_candidates)
 
     events =
-      Eventsourcingdb.read_events(client, "/test", %ReadEventsOptions{
+      Eventsourcingdb.read_events!(client, "/test", %ReadEventsOptions{
         from_latest_event: %FromLatestEventOptions{
           subject: "/",
           type: "io.eventsourcingdb.test.does-not-exist",
@@ -184,7 +200,7 @@ defmodule EventsourcingdbTest.ReadEvents do
     written = Eventsourcingdb.write_events!(client, event_candidates)
 
     events =
-      Eventsourcingdb.read_events(client, "/test", %ReadEventsOptions{
+      Eventsourcingdb.read_events!(client, "/test", %ReadEventsOptions{
         from_latest_event: %FromLatestEventOptions{
           subject: "/marker",
           type: "io.eventsourcingdb.test",
