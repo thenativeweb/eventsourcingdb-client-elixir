@@ -144,6 +144,7 @@ defmodule EventsourcingdbTest.ReadEvents do
         },
         recursive: false
       })
+      |> Enum.to_list()
 
     assert Enum.count(events) == 1
     assert Enum.at(events, 0).data["value"] == 42
@@ -165,6 +166,7 @@ defmodule EventsourcingdbTest.ReadEvents do
         },
         recursive: false
       })
+      |> Enum.to_list()
 
     assert Enum.count(events) == 1
     assert Enum.at(events, 0).data["value"] == 23
