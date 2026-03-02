@@ -1,6 +1,6 @@
 defmodule EventsourcingdbTest.RegisterEventSchema do
   alias Eventsourcingdb.TestContainer
-  use ExUnit.Case
+  use ExUnit.Case, async: true
 
   import Testcontainers.ExUnit
 

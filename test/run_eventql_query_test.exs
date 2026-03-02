@@ -1,7 +1,7 @@
 defmodule EventsourcingdbTest.RunEventQLQuery do
   alias Eventsourcingdb.TestContainer
   import EventsourcingdbTest.Utils
-  use ExUnit.Case
+  use ExUnit.Case, async: true
 
   import Testcontainers.ExUnit
 
