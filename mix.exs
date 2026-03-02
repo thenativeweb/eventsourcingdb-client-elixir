@@ -14,20 +14,30 @@ defmodule Eventsourcingdb.MixProject do
   alias Eventsourcingdb.Event
   use Mix.Project
 
+  @version "0.1.0"
+  @source_url "https://github.com/thenativeweb/eventsourcingdb-client-elixir"
+  @homepage_url "https://eventsourcingdb.io"
+
   def project do
     [
       app: :eventsourcingdb,
-      version: "0.1.0",
+      version: @version,
       elixir: "~> 1.19",
-      start_permanent: Mix.env() == :prod,
+      description:
+        "The official Elixir client SDK for EventSourcingDB – a purpose-built database for event sourcing.",
+      package: [
+        links: %{"GitHub" => @source_url, "Homepage" => @homepage_url},
+        licenses: ["MIT"]
+      ],
       aliases: aliases(),
       deps: deps(),
+      start_permanent: Mix.env() == :prod,
       elixirc_paths: elixirc_paths(Mix.env()),
 
       # Docs
       name: "EventSourcingDB",
-      source_url: "https://github.com/thenativeweb/eventsourcingdb-client-elixir",
-      homepage_url: "https://eventsourcingdb.io",
+      source_url: @source_url,
+      homepage_url: @homepage_url,
       docs: &docs/0
     ]
   end
