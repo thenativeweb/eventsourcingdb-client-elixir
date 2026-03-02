@@ -1,4 +1,4 @@
-# Eventsourcingdb
+# eventsourcingdb
 
 The official Elixir client SDK for [EventSourcingDB](https://www.eventsourcingdb.io) – a purpose-built database for event sourcing.
 
