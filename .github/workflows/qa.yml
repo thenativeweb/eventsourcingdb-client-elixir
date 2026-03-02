@@ -19,7 +19,7 @@ jobs:
       MIX_ENV: test
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Install inotify-tools
         run: sudo apt-get install -y inotify-tools
       - uses: erlef/setup-beam@v1
