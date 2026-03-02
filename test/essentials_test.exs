@@ -1,7 +1,7 @@
 defmodule EventsourcingdbTest.Essentials do
   alias Eventsourcingdb.Client
   alias Eventsourcingdb.TestContainer
-  use ExUnit.Case, asnyc: true
+  use ExUnit.Case, async: true
 
   import Testcontainers.ExUnit
 

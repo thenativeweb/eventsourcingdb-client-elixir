@@ -3,7 +3,7 @@ defmodule EventsourcingdbTest.ReadEventType do
   alias Eventsourcingdb.EventType
   alias Eventsourcingdb.TestContainer
   import EventsourcingdbTest.Utils
-  use ExUnit.Case, asnyc: true
+  use ExUnit.Case, async: true
 
   import Testcontainers.ExUnit
 

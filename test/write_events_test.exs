@@ -5,7 +5,7 @@ defmodule EventsourcingdbTest.WriteEvents do
   alias Eventsourcingdb.IsSubjectPristine
   alias Eventsourcingdb.TestContainer
   import EventsourcingdbTest.Utils
-  use ExUnit.Case, asnyc: true
+  use ExUnit.Case, async: true
 
   import Testcontainers.ExUnit
 
