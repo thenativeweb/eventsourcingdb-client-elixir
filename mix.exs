@@ -16,7 +16,8 @@ defmodule Eventsourcingdb.MixProject do
 
   @version "0.1.0"
   @source_url "https://github.com/thenativeweb/eventsourcingdb-client-elixir"
-  @homepage_url "https://eventsourcingdb.io"
+  @homepage_url "https://www.eventsourcingdb.io/"
+	@documentation_url "https://docs.eventsourcingdb.io/"
 
   def project do
     [
@@ -26,7 +27,7 @@ defmodule Eventsourcingdb.MixProject do
       description:
         "The official Elixir client SDK for EventSourcingDB – a purpose-built database for event sourcing.",
       package: [
-        links: %{"GitHub" => @source_url, "Homepage" => @homepage_url},
+        links: %{"GitHub" => @source_url, "Website" => @homepage_url, "Documentation" => @documentation_url},
         licenses: ["MIT"]
       ],
       aliases: aliases(),
