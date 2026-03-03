@@ -19,6 +19,7 @@ jobs:
         uses: actions/checkout@v6
         with:
           fetch-depth: "0"
+          token: ${{ secrets.TOKEN_GITHUB_TO_GITHUB_REPOSITORIES_RW }}
       - name: Install inotify-tools
         run: sudo apt-get install -y inotify-tools
       - name: Use Elixir
@@ -51,8 +52,14 @@ jobs:
       - name: Create new version
         if: ${{ steps.get_next_version.outputs.hasNextVersion == 'true' }}
         run: |
-          git tag v${{steps.get_next_version.outputs.version}}
-          git push origin v${{steps.get_next_version.outputs.version}}
+          sed -i 's/@version ".*"/@version "${{ steps.get_next_version.outputs.version }}"/' mix.exs
+          git config --global user.email "hello@thenativeweb.io"
+          git config --global user.name "${{ github.actor }}"
+          git add .
+          git commit -m 'chore: Bump version to ${{ steps.get_next_version.outputs.version }}. [skip ci]'
+          git push
+          git tag ${{ steps.get_next_version.outputs.version }}
+          git push origin ${{ steps.get_next_version.outputs.version }}
       - name: Publish package
         if: ${{ steps.get_next_version.outputs.hasNextVersion == 'true' }}
         env:
