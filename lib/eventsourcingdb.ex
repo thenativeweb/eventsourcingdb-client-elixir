@@ -729,11 +729,12 @@ defmodule Eventsourcingdb do
   @spec validate_server_headers({:ok, Req.Response.t()}) ::
           {:ok} | {:error, InvalidServerHeader.t()}
   defp validate_server_headers({:ok, response}) do
-    case response
-         |> Req.Response.get_header("Server")
-         |> Enum.any?(fn val -> String.starts_with?(val, "EventSourcingDB/") end) do
-      true -> {:ok}
-      false -> {:error, %InvalidServerHeader{}}
+    if response
+       |> Req.Response.get_header("Server")
+       |> Enum.any?(fn val -> String.starts_with?(val, "EventSourcingDB/") end) do
+      {:ok}
+    else
+      {:error, %InvalidServerHeader{}}
     end
   end
 
