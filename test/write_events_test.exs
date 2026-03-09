@@ -1,4 +1,5 @@
 defmodule EventsourcingdbTest.WriteEvents do
+  alias Eventsourcingdb.Errors.ApiError
   alias Eventsourcingdb.IsEventQLTrue
   alias Eventsourcingdb.IsSubjectOnEventId
   alias Eventsourcingdb.IsSubjectPopulated
@@ -56,7 +57,7 @@ defmodule EventsourcingdbTest.WriteEvents do
         %IsSubjectPristine{subject: event_candidate.subject}
       ])
 
-    assert match?({:error, :api_error, "state conflict: precondition failed\n"}, written)
+    assert match?({:error, %ApiError{reason: "state conflict: precondition failed\n"}}, written)
   end
 
   test "write event with is subject populated condition on empty subject", %{esdb: esdb} do
@@ -69,7 +70,7 @@ defmodule EventsourcingdbTest.WriteEvents do
         %IsSubjectPopulated{subject: event_candidate.subject}
       ])
 
-    assert match?({:error, :api_error, "state conflict: precondition failed\n"}, written)
+    assert match?({:error, %ApiError{reason: "state conflict: precondition failed\n"}}, written)
   end
 
   test "write event with is subject populated condition on non-empty subject", %{esdb: esdb} do
@@ -129,7 +130,7 @@ defmodule EventsourcingdbTest.WriteEvents do
         %IsSubjectPristine{subject: fill_event_candidate.subject}
       ])
 
-    assert match?({:error, :api_error, "state conflict: precondition failed\n"}, written)
+    assert match?({:error, %ApiError{reason: "state conflict: precondition failed\n"}}, written)
   end
 
   test "write event with IsSubjectOnEventId condition on non-empty subject with correct id", %{
@@ -161,7 +162,7 @@ defmodule EventsourcingdbTest.WriteEvents do
         %IsSubjectOnEventId{subject: event_candidate.subject, event_id: "100"}
       ])
 
-    assert match?({:error, :api_error, "state conflict: precondition failed\n"}, written)
+    assert match?({:error, %ApiError{reason: "state conflict: precondition failed\n"}}, written)
   end
 
   test "write multiple events with IsSubjectOnEventId condition on empty subject", %{esdb: esdb} do
@@ -177,7 +178,7 @@ defmodule EventsourcingdbTest.WriteEvents do
         %IsSubjectOnEventId{subject: Enum.at(event_candidates, 0).subject, event_id: "100"}
       ])
 
-    assert match?({:error, :api_error, "state conflict: precondition failed\n"}, written)
+    assert match?({:error, %ApiError{reason: "state conflict: precondition failed\n"}}, written)
   end
 
   test "write multiple events with IsSubjectOnEventId condition on non-empty subject with correct id",
@@ -217,7 +218,7 @@ defmodule EventsourcingdbTest.WriteEvents do
         %IsSubjectOnEventId{subject: event_candidate.subject, event_id: "100"}
       ])
 
-    assert match?({:error, :api_error, "state conflict: precondition failed\n"}, written)
+    assert match?({:error, %ApiError{reason: "state conflict: precondition failed\n"}}, written)
   end
 
   test "write multiple events with IsEventQL condition", %{esdb: esdb} do

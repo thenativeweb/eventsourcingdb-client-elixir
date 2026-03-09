@@ -1,4 +1,5 @@
 defmodule EventsourcingdbTest.ReadEventType do
+  alias Eventsourcingdb.Errors.ApiError
   alias Eventsourcingdb.EventCandidate
   alias Eventsourcingdb.EventType
   alias Eventsourcingdb.TestContainer
@@ -14,7 +15,10 @@ defmodule EventsourcingdbTest.ReadEventType do
 
     result = Eventsourcingdb.read_event_type(client, "non.existent.eventType")
 
-    assert match?({:error, :api_error, "event type 'non.existent.eventType' not found\n"}, result)
+    assert match?(
+             {:error, %ApiError{reason: "event type 'non.existent.eventType' not found\n"}},
+             result
+           )
   end
 
   test "fails if the event type is malformed", %{esdb: esdb} do
@@ -22,7 +26,10 @@ defmodule EventsourcingdbTest.ReadEventType do
 
     result = Eventsourcingdb.read_event_type(client, "malformed.eventType.")
 
-    assert match?({:error, :api_error, "invalid event type: 'malformed.eventType.'\n"}, result)
+    assert match?(
+             {:error, %ApiError{reason: "invalid event type: 'malformed.eventType.'\n"}},
+             result
+           )
   end
 
   test "read an existing event type", %{esdb: esdb} do

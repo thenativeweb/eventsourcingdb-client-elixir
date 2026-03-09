@@ -14,7 +14,7 @@ defmodule Eventsourcingdb.ObserveEventsOptions do
   def new(options) do
     options =
       options
-      |> Keyword.validate!([:recursive, :order, :from_latest_event, :lower_bound, :upper_bound])
+      |> Keyword.validate!([:recursive, :from_latest_event, :lower_bound])
 
     struct!(__MODULE__, options)
   end

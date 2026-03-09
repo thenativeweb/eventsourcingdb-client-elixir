@@ -29,6 +29,6 @@ defmodule Eventsourcingdb.Requests.WriteEvents do
   # validation and parsing
 
   def validate_body(payload) do
-    {:ok, Enum.map(payload, fn ev -> Event.new(ev) end)}
+    {:ok, Enum.map(payload, &Event.new/1)}
   end
 end

@@ -1,17 +1,4 @@
 defmodule Eventsourcingdb.MixProject do
-  alias Eventsourcingdb.ObserveEventsOptions
-  alias Eventsourcingdb.ReadEventsOptions
-  alias Eventsourcingdb.FromLatestEventOptions
-  alias Eventsourcingdb.BoundOptions
-  alias Eventsourcingdb.TestContainer
-  alias Eventsourcingdb.IsSubjectPristine
-  alias Eventsourcingdb.IsSubjectPopulated
-  alias Eventsourcingdb.IsSubjectOnEventId
-  alias Eventsourcingdb.IsEventQLTrue
-  alias Eventsourcingdb.ManagementEvent
-  alias Eventsourcingdb.EventType
-  alias Eventsourcingdb.EventCandidate
-  alias Eventsourcingdb.Event
   use Mix.Project
 
   @version "0.4.1"
@@ -65,25 +52,25 @@ defmodule Eventsourcingdb.MixProject do
       extras: ["README.md"],
       groups_for_modules: [
         Events: [
-          Event,
-          EventCandidate,
-          EventType,
-          ManagementEvent
+          Eventsourcingdb.Event,
+          Eventsourcingdb.EventCandidate,
+          Eventsourcingdb.EventType,
+          Eventsourcingdb.ManagementEvent
         ],
         Preconditions: [
-          IsEventQLTrue,
-          IsSubjectOnEventId,
-          IsSubjectPopulated,
-          IsSubjectPristine
+          Eventsourcingdb.IsEventQLTrue,
+          Eventsourcingdb.IsSubjectOnEventId,
+          Eventsourcingdb.IsSubjectPopulated,
+          Eventsourcingdb.IsSubjectPristine
         ],
         "Request Options": [
-          BoundOptions,
-          FromLatestEventOptions,
-          ObserveEventsOptions,
-          ReadEventsOptions
+          Eventsourcingdb.BoundOptions,
+          Eventsourcingdb.FromLatestEventOptions,
+          Eventsourcingdb.ObserveEventsOptions,
+          Eventsourcingdb.ReadEventsOptions
         ],
         Testing: [
-          TestContainer
+          Eventsourcingdb.TestContainer
         ]
       ]
     ]

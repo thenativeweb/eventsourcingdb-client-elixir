@@ -1,4 +1,6 @@
 defmodule EventsourcingdbTest.Essentials do
+  alias Eventsourcingdb.Errors.ApiTokenInvalid
+  alias Eventsourcingdb.Errors.TransmissionError
   alias Eventsourcingdb.Client
   alias Eventsourcingdb.TestContainer
   use ExUnit.Case, async: true
@@ -21,7 +23,7 @@ defmodule EventsourcingdbTest.Essentials do
 
     result = Eventsourcingdb.ping(client)
 
-    assert match?({:error, :transmission_error, _}, result)
+    assert match?({:error, %TransmissionError{}}, result)
   end
 
   test "verify api token", %{esdb: esdb} do
@@ -34,6 +36,6 @@ defmodule EventsourcingdbTest.Essentials do
 
     result = Eventsourcingdb.verify_api_token(invalid_client)
 
-    assert match?({:error, :api_token_invalid}, result)
+    assert match?({:error, %ApiTokenInvalid{}}, result)
   end
 end

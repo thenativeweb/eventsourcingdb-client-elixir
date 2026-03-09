@@ -3,6 +3,9 @@ defmodule Eventsourcingdb do
   `Eventsourcingdb` client SDK.
   """
 
+  alias Eventsourcingdb.Errors.ApiError
+  alias Eventsourcingdb.Errors.InvalidServerHeader
+  alias Eventsourcingdb.Errors.TransmissionError
   alias Eventsourcingdb.ObserveEventsOptions
   alias Eventsourcingdb.ReadEventsOptions
   alias Eventsourcingdb.Client
@@ -30,12 +33,17 @@ defmodule Eventsourcingdb do
   @typedoc """
   The response format for a request
   """
-  @type response(t) :: {:ok, t} | {:error, any()}
+  @type response(t) :: :ok | {:ok, t} | {:error, Exception.t()}
+
+  @typedoc """
+  The response format for a force request
+  """
+  @type response!(t) :: :ok | t
 
   @typedoc """
   The response format for a request returning a stream
   """
-  @type stream_response(t) :: {:ok, Enumerable.t(t)} | {:error, any()}
+  @type stream_response(t) :: {:ok, Enumerable.t(t)} | {:error, Exception.t()}
 
   @typedoc """
   The response format for a force request returning a stream
@@ -179,7 +187,7 @@ defmodule Eventsourcingdb do
     request_one_shot(client, WriteEvents.new(events, preconditions))
   end
 
-  @spec write_events!(Client.t(), maybe_improper_list(), any()) :: Event.t()
+  @spec write_events!(Client.t(), maybe_improper_list(), any()) :: response!(Event.t())
   def write_events!(client, events, preconditions \\ []) when is_list(events) do
     request_one_shot!(client, WriteEvents.new(events, preconditions))
   end
@@ -477,7 +485,7 @@ defmodule Eventsourcingdb do
     request_one_shot(client, ReadEventType.new(event_type))
   end
 
-  @spec read_event_type!(Client.t(), String.t()) :: EventType.t()
+  @spec read_event_type!(Client.t(), String.t()) :: response!(EventType.t())
   def read_event_type!(client, event_type) do
     request_one_shot!(client, ReadEventType.new(event_type))
   end
@@ -496,16 +504,17 @@ defmodule Eventsourcingdb do
   # region Requests
   #
 
-  @spec request_stream!(Client.t(), struct()) :: any()
+  @spec request_stream!(Client.t(), struct()) :: stream_response!(any())
   defp request_stream!(client, request) do
     result = request_stream(client, request)
 
     case result do
       {:ok, stream} -> stream
-      {:error, type, reason} -> raise(type, reason)
+      {:error, reason} -> raise(reason)
     end
   end
 
+  @spec request_stream(Client.t(), struct()) :: stream_response(any())
   defp request_stream(client, request) do
     case open_stream(client, request) do
       {:ok, response} ->
@@ -524,11 +533,12 @@ defmodule Eventsourcingdb do
 
         {:ok, stream}
 
-      {:error, type, reason} ->
-        {:error, type, reason}
+      {:error, reason} ->
+        {:error, reason}
     end
   end
 
+  @spec open_stream(Client.t(), struct()) :: response(any())
   defp open_stream(client, request) do
     response =
       client
@@ -618,7 +628,7 @@ defmodule Eventsourcingdb do
     end
   end
 
-  @spec request_one_shot(Client.t(), struct()) :: any()
+  @spec request_one_shot(Client.t(), struct()) :: response(any())
   defp request_one_shot(client, request) do
     request_module = get_request_module(request)
 
@@ -702,19 +712,19 @@ defmodule Eventsourcingdb do
   #
 
   defp validate_transmission({:error, reason}) do
-    {:error, :transmission_error, reason}
+    {:error, %TransmissionError{reason: reason}}
   end
 
   defp validate_transmission({:ok, _}), do: {:ok}
 
   @spec validate_server_headers({:ok, Req.Response.t()}) ::
-          {:ok} | {:error, :invalid_server_header}
+          {:ok} | {:error, InvalidServerHeader.t()}
   defp validate_server_headers({:ok, response}) do
     case response
          |> Req.Response.get_header("Server")
          |> Enum.any?(fn val -> String.starts_with?(val, "EventSourcingDB/") end) do
       true -> {:ok}
-      false -> {:error, :invalid_server_header}
+      false -> {:error, %InvalidServerHeader{}}
     end
   end
 
@@ -723,7 +733,7 @@ defmodule Eventsourcingdb do
   end
 
   defp validate_response({:ok, %{body: body}}) do
-    {:error, :api_error, body}
+    {:error, %ApiError{reason: body}}
   end
 
   defp validate_request_response(response, request_module) do

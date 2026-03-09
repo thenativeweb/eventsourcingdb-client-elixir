@@ -1,4 +1,5 @@
 defmodule EventsourcingdbTest.RegisterEventSchema do
+  alias Eventsourcingdb.Errors.ApiError
   alias Eventsourcingdb.TestContainer
   use ExUnit.Case, async: true
 
@@ -34,6 +35,6 @@ defmodule EventsourcingdbTest.RegisterEventSchema do
       client
       |> Eventsourcingdb.register_event_schema("io.eventsourcingdb.test", %{"x" => "csie"})
 
-    assert match?({:error, :api_error, _}, result)
+    assert match?({:error, %ApiError{}}, result)
   end
 end
