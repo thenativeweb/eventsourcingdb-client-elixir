@@ -70,8 +70,8 @@ If you only want to write events in case a subject (such as `/books/42`) does no
 
 ```elixir
 written = Eventsourcingdb.write_events(
-  client, 
-  [event], 
+  client,
+  [event],
   [%Eventsourcingdb.IsSubjectPristine{subject: "/books/42"}]
 )
 
@@ -87,8 +87,8 @@ If you only want to write events in case a subject (such as `/books/42`) already
 
 ```elixir
 written = Eventsourcingdb.write_events(
-  client, 
-  [event], 
+  client,
+  [event],
   [%Eventsourcingdb.IsSubjectPopulated{subject: "/books/42"}]
 )
 
@@ -104,8 +104,8 @@ If you only want to write events in case the last event of a subject (such as `/
 
 ```elixir
 written = Eventsourcingdb.write_events(
-  client, 
-  [event], 
+  client,
+  [event],
   [%Eventsourcingdb.IsSubjectOnEventId{subject: "/books/42", event_id: "0"}]
 )
 
@@ -123,8 +123,8 @@ If you want to write events depending on an EventQL query, use the `IsEventQLQue
 
 ```elixir
 written = Eventsourcingdb.write_events(
-  client, 
-  [event], 
+  client,
+  [event],
   [%Eventsourcingdb.IsEventQLQueryTrue{
     query: "FROM e IN events WHERE e.type == 'io.eventsourcingdb.library.book-borrowed' PROJECT INTO COUNT () < 10"
    }]
@@ -158,8 +158,8 @@ If you want to read not only all the events of a subject, but also the events of
 
 ```elixir
 result = Eventsourcingdb.read_events(
-  client, 
-  "/books/42", 
+  client,
+  "/books/42",
   %Eventsourcingdb.ReadEventsOptions{recursive: true}
 )
 ```
@@ -170,8 +170,8 @@ By default, events are read in chronological order. To read in anti-chronologica
 
 ```elixir
 result = Eventsourcingdb.read_events(
-  client, 
-  "/books/42", 
+  client,
+  "/books/42",
   %Eventsourcingdb.ReadEventsOptions{
     recursive: false,
     order: :antichronological
@@ -189,8 +189,8 @@ Specify the ID and whether to include or exclude it, for both the lower and uppe
 
 ```elixir
 result = Eventsourcingdb.read_events(
-  client, 
-  "/books/42", 
+  client,
+  "/books/42",
   %Eventsourcingdb.ReadEventsOptions{
     recursive: false,
     lower_bound: %Eventsourcingdb.BoundOptions{
@@ -213,8 +213,8 @@ Possible options are `:read_nothing`, which skips reading entirely, or `:read_ev
 
 ```elixir
 result = Eventsourcingdb.read_events(
-  client, 
-  "/books/42", 
+  client,
+  "/books/42",
   %Eventsourcingdb.ReadEventsOptions{
     recursive: false,
     from_latest_event: %Eventsourcingdb.FromLatestEventOptions{
@@ -306,7 +306,7 @@ result = Eventsourcingdb.observe_events(
   "/books/42",
   %Eventsourcingdb.ObserveEventsOptions{
     recursive: false,
-    from_latest_event: %Eventsourcingdb.FromLatestEvevntOptions{
+    from_latest_event: %Eventsourcingdb.FromLatestEventOptions{
       subject: "/books/42",
       type: "io.eventsourcingdb.library.book-borrowed",
       if_event_is_missing: :read_everything
@@ -413,8 +413,8 @@ By default, `TestContainer` uses the `latest` tag of the official EventSourcingD
 
 ```elixir
 container(
-  :esdb, 
-  TestContainer.new() 
+  :esdb,
+  TestContainer.new()
   |> TestContainer.with_image_tag("1.0.0")
 )
 ```
@@ -423,7 +423,7 @@ Similarly, you can configure the port to use and the API token. Call the `with_p
 
 ```elixir
 container(
-  :esdb, 
+  :esdb,
   TestContainer.new()
   |> TestContainer.with_port(4000)
   |> TestContainer.with_api_token("secret")

@@ -55,7 +55,7 @@ defmodule Eventsourcingdb do
 
   ## Examples
 
-      iex> client = %Eventsourcingdb.Client{"http://localhost:3000", "secrettoken"}
+      iex> client = %Eventsourcingdb.Client.new{"http://localhost:3000", "secrettoken"}
       iex> Eventsourcingdb.ping(client)
       :ok
   """
@@ -69,7 +69,7 @@ defmodule Eventsourcingdb do
 
   ## Examples
 
-      iex> client = %Eventsourcingdb.Client{"http://localhost:3000", "secrettoken"}
+      iex> client = %Eventsourcingdb.Client.new{"http://localhost:3000", "secrettoken"}
       iex> Eventsourcingdb.verify_api_token(client)
       :ok
   """
@@ -305,7 +305,7 @@ defmodule Eventsourcingdb do
   The function returns a stream from which you can retrieve one event at a time:
 
   ```elixir
-  result = Eventsourcingdb.observe_events("/books/42")
+  result = Eventsourcingdb.observe_events(client, "/books/42")
 
   case result do
     {:ok, events} -> Enum.to_list(events)
@@ -360,7 +360,7 @@ defmodule Eventsourcingdb do
     "/books/42",
     %Eventsourcingdb.ObserveEventsOptions{
       recursive: false,
-      from_latest_event: %Eventsourcingdb.FromLatestEvevntOptions{
+      from_latest_event: %Eventsourcingdb.FromLatestEventOptions{
         subject: "/books/42",
         type: "io.eventsourcingdb.library.book-borrowed",
         if_event_is_missing: :read_everything
