@@ -1,3 +1,4 @@
+# credo:disable-for-lines:1
 defmodule Eventsourcingdb.Errors.TransmissionError do
   defexception [:reason]
 
