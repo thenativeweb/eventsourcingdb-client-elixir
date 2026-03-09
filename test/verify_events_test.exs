@@ -1,4 +1,5 @@
 defmodule EventsourcingdbTest.VerifyEvents do
+  alias Eventsourcingdb.Errors.HashVerificationFailed
   alias Eventsourcingdb.Event
   alias Eventsourcingdb.TestContainer
   import EventsourcingdbTest.Utils
