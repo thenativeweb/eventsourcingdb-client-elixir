@@ -3,6 +3,10 @@ defmodule Eventsourcingdb do
   `Eventsourcingdb` client SDK.
   """
 
+  alias Eventsourcingdb.IsSubjectPristine
+  alias Eventsourcingdb.IsSubjectPopulated
+  alias Eventsourcingdb.IsSubjectOnEventId
+  alias Eventsourcingdb.IsEventQLTrue
   alias Eventsourcingdb.Errors.ApiError
   alias Eventsourcingdb.Errors.InvalidServerHeader
   alias Eventsourcingdb.Errors.TransmissionError
@@ -49,6 +53,12 @@ defmodule Eventsourcingdb do
   The response format for a force request returning a stream
   """
   @type stream_response!(t) :: Enumerable.t(t)
+
+  @type precondition() ::
+          IsEventQLTrue.t()
+          | IsSubjectOnEventId.t()
+          | IsSubjectPopulated.t()
+          | IsSubjectPristine.t()
 
   @doc """
   Pings the DB instance to check if it is reachable.
@@ -182,12 +192,12 @@ defmodule Eventsourcingdb do
   end
   ```
   """
-  @spec write_events(Client.t(), maybe_improper_list(), any()) :: response(Event.t())
+  @spec write_events(Client.t(), nonempty_list(), [precondition()]) :: response(Event.t())
   def write_events(client, events, preconditions \\ []) when is_list(events) do
     request_one_shot(client, WriteEvents.new(events, preconditions))
   end
 
-  @spec write_events!(Client.t(), maybe_improper_list(), any()) :: response!(Event.t())
+  @spec write_events!(Client.t(), nonempty_list(), [precondition()]) :: response!(Event.t())
   def write_events!(client, events, preconditions \\ []) when is_list(events) do
     request_one_shot!(client, WriteEvents.new(events, preconditions))
   end
@@ -685,7 +695,6 @@ defmodule Eventsourcingdb do
       |> Keyword.merge(client.req_options)
 
     Req.new(opts)
-    # |> Req.Request.append_request_steps(inspect: &IO.inspect/1)
   end
 
   defp implements_protocol?(protocol, mod) when is_atom(protocol) and is_struct(mod) do
