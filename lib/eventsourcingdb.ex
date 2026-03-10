@@ -3,6 +3,8 @@ defmodule Eventsourcingdb do
   `Eventsourcingdb` client SDK.
   """
 
+  alias Eventsourcingdb.Errors.InvalidResponseType
+  alias Eventsourcingdb.Errors.DBError
   alias Eventsourcingdb.IsSubjectPristine
   alias Eventsourcingdb.IsSubjectPopulated
   alias Eventsourcingdb.IsSubjectOnEventId
@@ -622,15 +624,14 @@ defmodule Eventsourcingdb do
 
           # Forward Errors from the DB as :db_error
           "error" ->
-            {:error, :db_error, payload}
+            {:error, %DBError{payload: payload}}
 
           # Ignore heartbeat messages.
           "heartbeat" ->
             nil
 
           other ->
-            {:error, :invalid_response_type,
-             "Expected type \"#{expected_type}\", but got \"#{other}\""}
+            {:error, %InvalidResponseType{expected: expected_type, actual: other}}
         end
 
       {:error, reason} ->
