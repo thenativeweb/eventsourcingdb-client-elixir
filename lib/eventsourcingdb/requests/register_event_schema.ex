@@ -37,7 +37,7 @@ defmodule EventSourcingDB.Requests.RegisterEventSchema do
   # region response
   # validation and parsing
 
-  def validate_body(%{"type" => "io.EventSourcingDB.api.event-schema-registered"} = body),
+  def validate_body(%{"type" => "io.eventsourcingdb.api.event-schema-registered"} = body),
     do: {:ok, ManagementEvent.new(body)}
 
   def validate_body(_payload), do: {:error, %InvalidEventType{}}

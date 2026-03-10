@@ -120,7 +120,7 @@ defmodule EventSourcingDB do
   event = %EventSourcingDB.EventCandidate{
     source: "https://library.EventSourcingDB.io",
     subject: "/books/42",
-    type: "io.EventSourcingDB.library.book-acquired",
+    type: "io.eventsourcingdb.library.book-acquired",
     data: %{
       "title" => "2001 - A Space Odyssey",
       "author" => "Arthur C. Clarke",
@@ -198,7 +198,7 @@ defmodule EventSourcingDB do
     client,
     [event],
     [%EventSourcingDB.IsEventQLQueryTrue{
-      query: "FROM e IN events WHERE e.type == 'io.EventSourcingDB.library.book-borrowed' PROJECT INTO COUNT () < 10"
+      query: "FROM e IN events WHERE e.type == 'io.eventsourcingdb.library.book-borrowed' PROJECT INTO COUNT () < 10"
      }]
   )
 
@@ -304,7 +304,7 @@ defmodule EventSourcingDB do
       recursive: false,
       from_latest_event: %EventSourcingDB.FromLatestEventOptions{
         subject: "/books/42",
-        type: "io.EventSourcingDB.library.book-borrowed"
+        type: "io.eventsourcingdb.library.book-borrowed"
         if_event_is_missing: :read_everything
       }
     }
@@ -390,7 +390,7 @@ defmodule EventSourcingDB do
       recursive: false,
       from_latest_event: %EventSourcingDB.FromLatestEventOptions{
         subject: "/books/42",
-        type: "io.EventSourcingDB.library.book-borrowed",
+        type: "io.eventsourcingdb.library.book-borrowed",
         if_event_is_missing: :read_everything
       }
     }
@@ -442,7 +442,7 @@ defmodule EventSourcingDB do
 
   ```elixir
   EventSourcingDB.register_event_schema(
-    "io.EventSourcingDB.library.book-acquired",
+    "io.eventsourcingdb.library.book-acquired",
     %{
       "type" => "object",
       "properties" => %{
@@ -500,7 +500,7 @@ defmodule EventSourcingDB do
   To list a specific event type, call the `read_event_type` function. The function returns the detailed event type, which includes the schema:
 
   ```elixir
-  result = EventSourcingDB.read_event_types(client, "io.EventSourcingDB.library.book-acquired")
+  result = EventSourcingDB.read_event_types(client, "io.eventsourcingdb.library.book-acquired")
 
   case result do
     {:ok, event_types} -> Enum.to_list(event_types)

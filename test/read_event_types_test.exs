@@ -23,11 +23,11 @@ defmodule EventSourcingDBTest.ReadEventTypes do
     EventSourcingDB.write_events!(client, [
       %EventCandidate{
         create_test_eventcandidate("/test/1", %{"value" => 21})
-        | type: "io.EventSourcingDB.test.foo"
+        | type: "io.eventsourcingdb.test.foo"
       },
       %EventCandidate{
         create_test_eventcandidate("/test/2", %{"value" => 42})
-        | type: "io.EventSourcingDB.test.bar"
+        | type: "io.eventsourcingdb.test.bar"
       }
     ])
 
@@ -36,12 +36,12 @@ defmodule EventSourcingDBTest.ReadEventTypes do
     assert result ==
              [
                %EventType{
-                 event_type: "io.EventSourcingDB.test.bar",
+                 event_type: "io.eventsourcingdb.test.bar",
                  is_phantom: false,
                  schema: nil
                },
                %EventType{
-                 event_type: "io.EventSourcingDB.test.foo",
+                 event_type: "io.eventsourcingdb.test.foo",
                  is_phantom: false,
                  schema: nil
                }
@@ -64,14 +64,14 @@ defmodule EventSourcingDBTest.ReadEventTypes do
       "required" => ["id", "name"]
     }
 
-    EventSourcingDB.register_event_schema(client, "io.EventSourcingDB.test", schema)
+    EventSourcingDB.register_event_schema(client, "io.eventsourcingdb.test", schema)
 
     result = EventSourcingDB.read_event_types!(client) |> Enum.to_list()
 
     assert result ==
              [
                %EventType{
-                 event_type: "io.EventSourcingDB.test",
+                 event_type: "io.eventsourcingdb.test",
                  is_phantom: true,
                  schema: schema
                }

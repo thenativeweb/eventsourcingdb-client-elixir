@@ -189,7 +189,7 @@ defmodule EventSourcingDB.TestContainer do
 
     import Container
 
-    @image_name "thenativeweb/EventSourcingDB"
+    @image_name "thenativeweb/eventsourcingdb"
 
     @impl true
     def build(builder) do

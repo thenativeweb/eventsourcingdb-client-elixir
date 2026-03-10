@@ -12,7 +12,7 @@ defmodule EventSourcingDBTest.RegisterEventSchema do
 
     result =
       client
-      |> EventSourcingDB.register_event_schema("io.EventSourcingDB.test", %{
+      |> EventSourcingDB.register_event_schema("io.eventsourcingdb.test", %{
         "type" => "object",
         "properties" => %{
           "id" => %{
@@ -33,7 +33,7 @@ defmodule EventSourcingDBTest.RegisterEventSchema do
 
     result =
       client
-      |> EventSourcingDB.register_event_schema("io.EventSourcingDB.test", %{"x" => "csie"})
+      |> EventSourcingDB.register_event_schema("io.eventsourcingdb.test", %{"x" => "csie"})
 
     assert match?({:error, %ApiError{}}, result)
   end

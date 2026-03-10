@@ -27,7 +27,7 @@ defmodule EventSourcingDBTest.WriteEvents do
     client = TestContainer.get_client(esdb)
 
     event_candidate = %{
-      type: "io.EventSourcingDB.test",
+      type: "io.eventsourcingdb.test",
       subject: "/test",
       source: "https://EventSourcingDB.io",
       data: %{"value" => 1}

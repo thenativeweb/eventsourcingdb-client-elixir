@@ -183,7 +183,7 @@ defmodule EventSourcingDBTest.ReadEvents do
       EventSourcingDB.read_events!(client, "/test", %ReadEventsOptions{
         from_latest_event: %FromLatestEventOptions{
           subject: "/",
-          type: "io.EventSourcingDB.test.does-not-exist",
+          type: "io.eventsourcingdb.test.does-not-exist",
           if_event_is_missing: :read_nothing
         },
         recursive: false
@@ -206,7 +206,7 @@ defmodule EventSourcingDBTest.ReadEvents do
       EventSourcingDB.read_events!(client, "/test", %ReadEventsOptions{
         from_latest_event: %FromLatestEventOptions{
           subject: "/marker",
-          type: "io.EventSourcingDB.test",
+          type: "io.eventsourcingdb.test",
           if_event_is_missing: :read_nothing
         },
         recursive: false

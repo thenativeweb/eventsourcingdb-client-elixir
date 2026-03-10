@@ -7,7 +7,7 @@ defmodule EventSourcingDBTest.Utils do
   @spec create_test_eventcandidate(String.t(), map()) :: EventCandidate.t()
   def create_test_eventcandidate(subject, data) do
     %EventCandidate{
-      type: "io.EventSourcingDB.test",
+      type: "io.eventsourcingdb.test",
       subject: subject,
       source: "https://EventSourcingDB.io",
       data: data

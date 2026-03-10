@@ -20,6 +20,6 @@ defmodule EventSourcingDB.Requests.Ping do
   # region response
   # validation and parsing
 
-  def validate_body(%{"type" => "io.EventSourcingDB.api.ping-received"}), do: {:ok, nil}
+  def validate_body(%{"type" => "io.eventsourcingdb.api.ping-received"}), do: {:ok, nil}
   def validate_body(_payload), do: {:error, %PingFailed{}}
 end

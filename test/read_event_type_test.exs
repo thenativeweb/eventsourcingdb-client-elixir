@@ -38,18 +38,18 @@ defmodule EventSourcingDBTest.ReadEventType do
     EventSourcingDB.write_events!(client, [
       %EventCandidate{
         create_test_eventcandidate("/test/1", %{"value" => 21})
-        | type: "io.EventSourcingDB.test.foo"
+        | type: "io.eventsourcingdb.test.foo"
       },
       %EventCandidate{
         create_test_eventcandidate("/test/2", %{"value" => 42})
-        | type: "io.EventSourcingDB.test.bar"
+        | type: "io.eventsourcingdb.test.bar"
       }
     ])
 
-    result = EventSourcingDB.read_event_type!(client, "io.EventSourcingDB.test.foo")
+    result = EventSourcingDB.read_event_type!(client, "io.eventsourcingdb.test.foo")
 
     assert match?(
-             %EventType{event_type: "io.EventSourcingDB.test.foo", is_phantom: false},
+             %EventType{event_type: "io.eventsourcingdb.test.foo", is_phantom: false},
              result
            )
   end
