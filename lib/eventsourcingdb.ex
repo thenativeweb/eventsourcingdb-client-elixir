@@ -65,7 +65,7 @@ defmodule Eventsourcingdb do
 
   ## Examples
 
-      iex> client = %Eventsourcingdb.Client.new{"http://localhost:3000", "secrettoken"}
+      iex> client = Eventsourcingdb.Client.new("http://localhost:3000", "secrettoken")
       iex> Eventsourcingdb.ping(client)
       :ok
   """
@@ -79,7 +79,7 @@ defmodule Eventsourcingdb do
 
   ## Examples
 
-      iex> client = %Eventsourcingdb.Client.new{"http://localhost:3000", "secrettoken"}
+      iex> client = Eventsourcingdb.Client.new("http://localhost:3000", "secrettoken")
       iex> Eventsourcingdb.verify_api_token(client)
       :ok
   """
