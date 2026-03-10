@@ -23,6 +23,22 @@ defmodule EventsourcingdbTest.WriteEvents do
     assert_event_match_eventcandidate(Enum.at(written, 0), event_candidate)
   end
 
+  test "write single event (map)", %{esdb: esdb} do
+    client = TestContainer.get_client(esdb)
+
+    event_candidate = %{
+      type: "io.eventsourcingdb.test",
+      subject: "/test",
+      source: "https://eventsourcingdb.io",
+      data: %{"value" => 1}
+    }
+
+    written =
+      Eventsourcingdb.write_events!(client, [event_candidate])
+
+    assert_event_match_eventcandidate(Enum.at(written, 0), event_candidate)
+  end
+
   test "write multiple events", %{esdb: esdb} do
     client = TestContainer.get_client(esdb)
 

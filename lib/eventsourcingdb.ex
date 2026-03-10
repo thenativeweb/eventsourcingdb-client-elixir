@@ -3,21 +3,22 @@ defmodule Eventsourcingdb do
   `Eventsourcingdb` client SDK.
   """
 
-  alias Eventsourcingdb.Errors.InvalidResponseType
-  alias Eventsourcingdb.Errors.DBError
   alias Eventsourcingdb.IsSubjectPristine
   alias Eventsourcingdb.IsSubjectPopulated
   alias Eventsourcingdb.IsSubjectOnEventId
   alias Eventsourcingdb.IsEventQLTrue
   alias Eventsourcingdb.Errors.ApiError
+  alias Eventsourcingdb.Errors.DBError
   alias Eventsourcingdb.Errors.InvalidServerHeader
+  alias Eventsourcingdb.Errors.InvalidResponseType
   alias Eventsourcingdb.Errors.TransmissionError
   alias Eventsourcingdb.ObserveEventsOptions
   alias Eventsourcingdb.ReadEventsOptions
   alias Eventsourcingdb.Client
+  alias Eventsourcingdb.Event
+  alias Eventsourcingdb.EventCandidate
   alias Eventsourcingdb.EventType
   alias Eventsourcingdb.ManagementEvent
-  alias Eventsourcingdb.Event
 
   alias Eventsourcingdb.Requests.{
     ObserveEvents,
@@ -199,12 +200,14 @@ defmodule Eventsourcingdb do
   end
   ```
   """
-  @spec write_events(Client.t(), nonempty_list(), [precondition()]) :: response(Event.t())
+  @spec write_events(Client.t(), nonempty_list(EventCandidate.t()), [precondition()]) ::
+          response(Event.t())
   def write_events(client, events, preconditions \\ []) when is_list(events) do
     request_one_shot(client, WriteEvents.new(events, preconditions))
   end
 
-  @spec write_events!(Client.t(), nonempty_list(), [precondition()]) :: response!(Event.t())
+  @spec write_events!(Client.t(), nonempty_list(EventCandidate.t()), [precondition()]) ::
+          response!(Event.t())
   def write_events!(client, events, preconditions \\ []) when is_list(events) do
     request_one_shot!(client, WriteEvents.new(events, preconditions))
   end
