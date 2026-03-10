@@ -1,4 +1,3 @@
-# credo:disable-for-lines:1
 defmodule Eventsourcingdb.Errors.ApiTokenInvalid do
   defexception message: "Provided API Token is invalid"
 

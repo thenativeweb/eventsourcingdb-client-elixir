@@ -1,4 +1,3 @@
-# credo:disable-for-lines:1
 defmodule Eventsourcingdb.Errors.InvalidResponseType do
   defexception [:expected, :actual]
 
