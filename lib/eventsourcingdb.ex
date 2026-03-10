@@ -39,12 +39,17 @@ defmodule Eventsourcingdb do
   @typedoc """
   The response format for a request
   """
-  @type response(t) :: :ok | {:ok, t} | {:error, Exception.t()}
+  @type primitive_response() :: :ok | {:error, Exception.t()}
+
+  @typedoc """
+  The response format for a request
+  """
+  @type response(t) :: {:ok, t} | {:error, Exception.t()}
 
   @typedoc """
   The response format for a force request
   """
-  @type response!(t) :: :ok | t
+  @type response!(t) :: t
 
   @typedoc """
   The response format for a request returning a stream
@@ -71,7 +76,7 @@ defmodule Eventsourcingdb do
       iex> Eventsourcingdb.ping(client)
       :ok
   """
-  @spec ping(Client.t()) :: :ok | {:error, any()}
+  @spec ping(Client.t()) :: primitive_response()
   def ping(client) do
     request_one_shot(client, Ping.new())
   end
@@ -85,7 +90,7 @@ defmodule Eventsourcingdb do
       iex> Eventsourcingdb.verify_api_token(client)
       :ok
   """
-  @spec verify_api_token(Client.t()) :: :ok | {:error, any()}
+  @spec verify_api_token(Client.t()) :: primitive_response()
   def verify_api_token(client) do
     request_one_shot(client, VerifyApiToken.new())
   end
@@ -449,7 +454,7 @@ defmodule Eventsourcingdb do
     request_one_shot(client, RegisterEventSchema.new(event_type, schema))
   end
 
-  @spec register_event_schema!(Client.t(), String.t(), map()) :: ManagementEvent.t()
+  @spec register_event_schema!(Client.t(), String.t(), map()) :: response!(ManagementEvent.t())
   def register_event_schema!(client, event_type, schema) do
     request_one_shot!(client, RegisterEventSchema.new(event_type, schema))
   end
