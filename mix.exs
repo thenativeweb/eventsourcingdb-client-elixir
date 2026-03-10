@@ -11,16 +11,7 @@ defmodule Eventsourcingdb.MixProject do
       app: :eventsourcingdb,
       version: @version,
       elixir: "~> 1.19",
-      description:
-        "The official Elixir client SDK for EventSourcingDB – a purpose-built database for event sourcing.",
-      package: [
-        links: %{
-          "GitHub" => @source_url,
-          "Website" => @homepage_url,
-          "Documentation" => @documentation_url
-        },
-        licenses: ["MIT"]
-      ],
+      package: package(),
       aliases: aliases(),
       deps: deps(),
       start_permanent: Mix.env() == :prod,
@@ -28,8 +19,6 @@ defmodule Eventsourcingdb.MixProject do
 
       # Docs
       name: "EventSourcingDB",
-      source_url: @source_url,
-      homepage_url: @homepage_url,
       docs: &docs/0
     ]
   end
@@ -44,10 +33,25 @@ defmodule Eventsourcingdb.MixProject do
     ]
   end
 
+  defp package do
+    [
+      description:
+        "The official Elixir client SDK for EventSourcingDB – a purpose-built database for event sourcing.",
+      links: %{
+        "GitHub" => @source_url,
+        "Website" => @homepage_url,
+        "Documentation" => @documentation_url
+      },
+      licenses: ["MIT"]
+    ]
+  end
+
   defp docs do
     [
       # can be changed to a module name, if you prefer
       main: "readme",
+      source_url: @source_url,
+      source_ref: "v#{@version}",
       # logo: "path/to/logo.png",
       extras: ["README.md"],
       groups_for_modules: [
