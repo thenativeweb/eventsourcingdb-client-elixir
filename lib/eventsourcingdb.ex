@@ -3,22 +3,30 @@ defmodule Eventsourcingdb do
   `Eventsourcingdb` client SDK.
   """
 
-  alias Eventsourcingdb.IsSubjectPristine
-  alias Eventsourcingdb.IsSubjectPopulated
-  alias Eventsourcingdb.IsSubjectOnEventId
-  alias Eventsourcingdb.IsEventQLTrue
-  alias Eventsourcingdb.Errors.ApiError
-  alias Eventsourcingdb.Errors.DBError
-  alias Eventsourcingdb.Errors.InvalidServerHeader
-  alias Eventsourcingdb.Errors.InvalidResponseType
-  alias Eventsourcingdb.Errors.TransmissionError
-  alias Eventsourcingdb.ObserveEventsOptions
-  alias Eventsourcingdb.ReadEventsOptions
-  alias Eventsourcingdb.Client
-  alias Eventsourcingdb.Event
-  alias Eventsourcingdb.EventCandidate
-  alias Eventsourcingdb.EventType
-  alias Eventsourcingdb.ManagementEvent
+  alias Eventsourcingdb.{
+    ObserveEventsOptions,
+    ReadEventsOptions,
+    Client,
+    Event,
+    EventCandidate,
+    EventType,
+    ManagementEvent
+  }
+
+  alias Eventsourcingdb.{
+    IsSubjectPristine,
+    IsSubjectPopulated,
+    IsSubjectOnEventId,
+    IsEventQLTrue
+  }
+
+  alias Eventsourcingdb.Errors.{
+    ApiError,
+    DBError,
+    InvalidServerHeader,
+    InvalidResponseType,
+    TransmissionError
+  }
 
   alias Eventsourcingdb.Requests.{
     ObserveEvents,
