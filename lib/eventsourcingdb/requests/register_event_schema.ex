@@ -1,5 +1,6 @@
 defmodule Eventsourcingdb.Requests.RegisterEventSchema do
   @moduledoc false
+  alias Eventsourcingdb.Errors.InvalidEventType
   alias Eventsourcingdb.ManagementEvent
   alias Eventsourcingdb.Requests.RegisterEventSchema
   alias Eventsourcingdb.{OneShotRequest, Endpoint}
@@ -39,5 +40,5 @@ defmodule Eventsourcingdb.Requests.RegisterEventSchema do
   def validate_body(%{"type" => "io.eventsourcingdb.api.event-schema-registered"} = body),
     do: {:ok, ManagementEvent.new(body)}
 
-  def validate_body(_payload), do: {:error, :invalid_event_type}
+  def validate_body(_payload), do: {:error, %InvalidEventType{}}
 end

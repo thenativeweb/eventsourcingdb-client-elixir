@@ -1,4 +1,5 @@
 defmodule EventsourcingdbTest.VerifyEvents do
+  alias Eventsourcingdb.Errors.HashVerificationFailed
   alias Eventsourcingdb.Event
   alias Eventsourcingdb.TestContainer
   import EventsourcingdbTest.Utils
@@ -30,6 +31,6 @@ defmodule EventsourcingdbTest.VerifyEvents do
     event = Enum.at(written, 0)
     broken = Map.put(event, :hash, "BROKEN")
 
-    assert match?({:error, :hash_verification_failed, _}, Event.verify_hash(broken))
+    assert match?({:error, %HashVerificationFailed{}}, Event.verify_hash(broken))
   end
 end

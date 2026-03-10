@@ -1,17 +1,4 @@
 defmodule Eventsourcingdb.MixProject do
-  alias Eventsourcingdb.ObserveEventsOptions
-  alias Eventsourcingdb.ReadEventsOptions
-  alias Eventsourcingdb.FromLatestEventOptions
-  alias Eventsourcingdb.BoundOptions
-  alias Eventsourcingdb.TestContainer
-  alias Eventsourcingdb.IsSubjectPristine
-  alias Eventsourcingdb.IsSubjectPopulated
-  alias Eventsourcingdb.IsSubjectOnEventId
-  alias Eventsourcingdb.IsEventQLTrue
-  alias Eventsourcingdb.ManagementEvent
-  alias Eventsourcingdb.EventType
-  alias Eventsourcingdb.EventCandidate
-  alias Eventsourcingdb.Event
   use Mix.Project
 
   @version "0.4.1"
@@ -24,16 +11,7 @@ defmodule Eventsourcingdb.MixProject do
       app: :eventsourcingdb,
       version: @version,
       elixir: "~> 1.19",
-      description:
-        "The official Elixir client SDK for EventSourcingDB – a purpose-built database for event sourcing.",
-      package: [
-        links: %{
-          "GitHub" => @source_url,
-          "Website" => @homepage_url,
-          "Documentation" => @documentation_url
-        },
-        licenses: ["MIT"]
-      ],
+      package: package(),
       aliases: aliases(),
       deps: deps(),
       start_permanent: Mix.env() == :prod,
@@ -41,8 +19,6 @@ defmodule Eventsourcingdb.MixProject do
 
       # Docs
       name: "EventSourcingDB",
-      source_url: @source_url,
-      homepage_url: @homepage_url,
       docs: &docs/0
     ]
   end
@@ -57,33 +33,48 @@ defmodule Eventsourcingdb.MixProject do
     ]
   end
 
+  defp package do
+    [
+      description:
+        "The official Elixir client SDK for EventSourcingDB – a purpose-built database for event sourcing.",
+      links: %{
+        "GitHub" => @source_url,
+        "Website" => @homepage_url,
+        "Documentation" => @documentation_url
+      },
+      licenses: ["MIT"]
+    ]
+  end
+
   defp docs do
     [
       # can be changed to a module name, if you prefer
       main: "readme",
+      source_url: @source_url,
+      source_ref: "v#{@version}",
       # logo: "path/to/logo.png",
       extras: ["README.md"],
       groups_for_modules: [
         Events: [
-          Event,
-          EventCandidate,
-          EventType,
-          ManagementEvent
+          Eventsourcingdb.Event,
+          Eventsourcingdb.EventCandidate,
+          Eventsourcingdb.EventType,
+          Eventsourcingdb.ManagementEvent
         ],
         Preconditions: [
-          IsEventQLTrue,
-          IsSubjectOnEventId,
-          IsSubjectPopulated,
-          IsSubjectPristine
+          Eventsourcingdb.IsEventQLTrue,
+          Eventsourcingdb.IsSubjectOnEventId,
+          Eventsourcingdb.IsSubjectPopulated,
+          Eventsourcingdb.IsSubjectPristine
         ],
         "Request Options": [
-          BoundOptions,
-          FromLatestEventOptions,
-          ObserveEventsOptions,
-          ReadEventsOptions
+          Eventsourcingdb.BoundOptions,
+          Eventsourcingdb.FromLatestEventOptions,
+          Eventsourcingdb.ObserveEventsOptions,
+          Eventsourcingdb.ReadEventsOptions
         ],
         Testing: [
-          TestContainer
+          Eventsourcingdb.TestContainer
         ]
       ]
     ]

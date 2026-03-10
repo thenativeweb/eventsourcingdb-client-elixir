@@ -3,12 +3,30 @@ defmodule Eventsourcingdb do
   `Eventsourcingdb` client SDK.
   """
 
-  alias Eventsourcingdb.ObserveEventsOptions
-  alias Eventsourcingdb.ReadEventsOptions
-  alias Eventsourcingdb.Client
-  alias Eventsourcingdb.EventType
-  alias Eventsourcingdb.ManagementEvent
-  alias Eventsourcingdb.Event
+  alias Eventsourcingdb.{
+    ObserveEventsOptions,
+    ReadEventsOptions,
+    Client,
+    Event,
+    EventCandidate,
+    EventType,
+    ManagementEvent
+  }
+
+  alias Eventsourcingdb.{
+    IsSubjectPristine,
+    IsSubjectPopulated,
+    IsSubjectOnEventId,
+    IsEventQLTrue
+  }
+
+  alias Eventsourcingdb.Errors.{
+    ApiError,
+    DBError,
+    InvalidServerHeader,
+    InvalidResponseType,
+    TransmissionError
+  }
 
   alias Eventsourcingdb.Requests.{
     ObserveEvents,
@@ -30,28 +48,44 @@ defmodule Eventsourcingdb do
   @typedoc """
   The response format for a request
   """
-  @type response(t) :: {:ok, t} | {:error, any()}
+  @type primitive_response() :: :ok | {:error, Exception.t()}
+
+  @typedoc """
+  The response format for a request
+  """
+  @type response(t) :: {:ok, t} | {:error, Exception.t()}
+
+  @typedoc """
+  The response format for a force request
+  """
+  @type response!(t) :: t
 
   @typedoc """
   The response format for a request returning a stream
   """
-  @type stream_response(t) :: {:ok, Enumerable.t(t)} | {:error, any()}
+  @type stream_response(t) :: {:ok, Enumerable.t(t)} | {:error, Exception.t()}
 
   @typedoc """
   The response format for a force request returning a stream
   """
   @type stream_response!(t) :: Enumerable.t(t)
 
+  @type precondition() ::
+          IsEventQLTrue.t()
+          | IsSubjectOnEventId.t()
+          | IsSubjectPopulated.t()
+          | IsSubjectPristine.t()
+
   @doc """
   Pings the DB instance to check if it is reachable.
 
   ## Examples
 
-      iex> client = %Eventsourcingdb.Client{"http://localhost:3000", "secrettoken"}
+      iex> client = Eventsourcingdb.Client.new("http://localhost:3000", "secrettoken")
       iex> Eventsourcingdb.ping(client)
       :ok
   """
-  @spec ping(Client.t()) :: :ok | {:error, any()}
+  @spec ping(Client.t()) :: primitive_response()
   def ping(client) do
     request_one_shot(client, Ping.new())
   end
@@ -61,11 +95,11 @@ defmodule Eventsourcingdb do
 
   ## Examples
 
-      iex> client = %Eventsourcingdb.Client{"http://localhost:3000", "secrettoken"}
+      iex> client = Eventsourcingdb.Client.new("http://localhost:3000", "secrettoken")
       iex> Eventsourcingdb.verify_api_token(client)
       :ok
   """
-  @spec verify_api_token(Client.t()) :: :ok | {:error, any()}
+  @spec verify_api_token(Client.t()) :: primitive_response()
   def verify_api_token(client) do
     request_one_shot(client, VerifyApiToken.new())
   end
@@ -174,12 +208,14 @@ defmodule Eventsourcingdb do
   end
   ```
   """
-  @spec write_events(Client.t(), maybe_improper_list(), any()) :: response(Event.t())
+  @spec write_events(Client.t(), nonempty_list(EventCandidate.t()), [precondition()]) ::
+          response(Event.t())
   def write_events(client, events, preconditions \\ []) when is_list(events) do
     request_one_shot(client, WriteEvents.new(events, preconditions))
   end
 
-  @spec write_events!(Client.t(), maybe_improper_list(), any()) :: Event.t()
+  @spec write_events!(Client.t(), nonempty_list(EventCandidate.t()), [precondition()]) ::
+          response!(Event.t())
   def write_events!(client, events, preconditions \\ []) when is_list(events) do
     request_one_shot!(client, WriteEvents.new(events, preconditions))
   end
@@ -297,7 +333,7 @@ defmodule Eventsourcingdb do
   The function returns a stream from which you can retrieve one event at a time:
 
   ```elixir
-  result = Eventsourcingdb.observe_events("/books/42")
+  result = Eventsourcingdb.observe_events(client, "/books/42")
 
   case result do
     {:ok, events} -> Enum.to_list(events)
@@ -352,7 +388,7 @@ defmodule Eventsourcingdb do
     "/books/42",
     %Eventsourcingdb.ObserveEventsOptions{
       recursive: false,
-      from_latest_event: %Eventsourcingdb.FromLatestEvevntOptions{
+      from_latest_event: %Eventsourcingdb.FromLatestEventOptions{
         subject: "/books/42",
         type: "io.eventsourcingdb.library.book-borrowed",
         if_event_is_missing: :read_everything
@@ -429,7 +465,7 @@ defmodule Eventsourcingdb do
     request_one_shot(client, RegisterEventSchema.new(event_type, schema))
   end
 
-  @spec register_event_schema!(Client.t(), String.t(), map()) :: ManagementEvent.t()
+  @spec register_event_schema!(Client.t(), String.t(), map()) :: response!(ManagementEvent.t())
   def register_event_schema!(client, event_type, schema) do
     request_one_shot!(client, RegisterEventSchema.new(event_type, schema))
   end
@@ -477,7 +513,7 @@ defmodule Eventsourcingdb do
     request_one_shot(client, ReadEventType.new(event_type))
   end
 
-  @spec read_event_type!(Client.t(), String.t()) :: EventType.t()
+  @spec read_event_type!(Client.t(), String.t()) :: response!(EventType.t())
   def read_event_type!(client, event_type) do
     request_one_shot!(client, ReadEventType.new(event_type))
   end
@@ -496,16 +532,17 @@ defmodule Eventsourcingdb do
   # region Requests
   #
 
-  @spec request_stream!(Client.t(), struct()) :: any()
+  @spec request_stream!(Client.t(), struct()) :: stream_response!(any())
   defp request_stream!(client, request) do
     result = request_stream(client, request)
 
     case result do
       {:ok, stream} -> stream
-      {:error, type, reason} -> raise(type, reason)
+      {:error, reason} -> raise(reason)
     end
   end
 
+  @spec request_stream(Client.t(), struct()) :: stream_response(any())
   defp request_stream(client, request) do
     case open_stream(client, request) do
       {:ok, response} ->
@@ -524,11 +561,12 @@ defmodule Eventsourcingdb do
 
         {:ok, stream}
 
-      {:error, type, reason} ->
-        {:error, type, reason}
+      {:error, reason} ->
+        {:error, reason}
     end
   end
 
+  @spec open_stream(Client.t(), struct()) :: response(any())
   defp open_stream(client, request) do
     response =
       client
@@ -600,17 +638,16 @@ defmodule Eventsourcingdb do
           ^expected_type ->
             {:ok, request_module.process(payload)}
 
-          # Forward Errors from the DB as :db_error
+          # Forward Errors from the DB as %DBError{}
           "error" ->
-            {:error, :db_error, payload}
+            {:error, %DBError{payload: payload}}
 
           # Ignore heartbeat messages.
           "heartbeat" ->
             nil
 
           other ->
-            {:error, :invalid_response_type,
-             "Expected type \"#{expected_type}\", but got \"#{other}\""}
+            {:error, %InvalidResponseType{expected: expected_type, actual: other}}
         end
 
       {:error, reason} ->
@@ -618,7 +655,7 @@ defmodule Eventsourcingdb do
     end
   end
 
-  @spec request_one_shot(Client.t(), struct()) :: any()
+  @spec request_one_shot(Client.t(), struct()) :: response(any())
   defp request_one_shot(client, request) do
     request_module = get_request_module(request)
 
@@ -675,7 +712,6 @@ defmodule Eventsourcingdb do
       |> Keyword.merge(client.req_options)
 
     Req.new(opts)
-    # |> Req.Request.append_request_steps(inspect: &IO.inspect/1)
   end
 
   defp implements_protocol?(protocol, mod) when is_atom(protocol) and is_struct(mod) do
@@ -702,19 +738,20 @@ defmodule Eventsourcingdb do
   #
 
   defp validate_transmission({:error, reason}) do
-    {:error, :transmission_error, reason}
+    {:error, %TransmissionError{reason: reason}}
   end
 
   defp validate_transmission({:ok, _}), do: {:ok}
 
   @spec validate_server_headers({:ok, Req.Response.t()}) ::
-          {:ok} | {:error, :invalid_server_header}
+          {:ok} | {:error, InvalidServerHeader.t()}
   defp validate_server_headers({:ok, response}) do
-    case response
-         |> Req.Response.get_header("Server")
-         |> Enum.any?(fn val -> String.starts_with?(val, "EventSourcingDB/") end) do
-      true -> {:ok}
-      false -> {:error, :invalid_server_header}
+    if response
+       |> Req.Response.get_header("Server")
+       |> Enum.any?(fn val -> String.starts_with?(val, "EventSourcingDB/") end) do
+      {:ok}
+    else
+      {:error, %InvalidServerHeader{}}
     end
   end
 
@@ -723,7 +760,7 @@ defmodule Eventsourcingdb do
   end
 
   defp validate_response({:ok, %{body: body}}) do
-    {:error, :api_error, body}
+    {:error, %ApiError{reason: body}}
   end
 
   defp validate_request_response(response, request_module) do

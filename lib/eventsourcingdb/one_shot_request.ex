@@ -3,8 +3,8 @@ defmodule Eventsourcingdb.OneShotRequest do
   alias Eventsourcingdb.OneShotRequest
 
   @callback validate_response({:ok, Req.Response.t()} | {:error, Exception.t()}) ::
-              :ok | {:error, any()}
-  @callback validate_body(map()) :: {:ok, any()} | {:error, any()}
+              :ok | {:error, Exception.t()}
+  @callback validate_body(map()) :: {:ok, any()} | {:error, Exception.t()}
 
   defmacro __using__(_opts) do
     quote do

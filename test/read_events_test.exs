@@ -1,4 +1,5 @@
 defmodule EventsourcingdbTest.ReadEvents do
+  alias Eventsourcingdb.Errors.TransmissionError
   alias Eventsourcingdb.Client
   alias Eventsourcingdb.FromLatestEventOptions
   alias Eventsourcingdb.BoundOptions
@@ -29,7 +30,7 @@ defmodule EventsourcingdbTest.ReadEvents do
 
     stream = Eventsourcingdb.read_events(client, "/")
 
-    assert match?({:error, :transmission_error, _}, stream)
+    assert match?({:error, %TransmissionError{}}, stream)
   end
 
   test "make read call with event", %{esdb: esdb} do

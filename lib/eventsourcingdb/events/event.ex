@@ -2,6 +2,7 @@ defmodule Eventsourcingdb.Event do
   @moduledoc """
   An Event coming from the server.
   """
+  alias Eventsourcingdb.Errors.HashVerificationFailed
   alias Eventsourcingdb.Event
   use TypedStruct
 
@@ -37,9 +38,10 @@ defmodule Eventsourcingdb.Event do
     final_hash =
       :crypto.hash(:sha256, "#{metadata_hash}#{data_hash}") |> Base.encode16(case: :lower)
 
-    case final_hash == event.hash do
-      true -> :ok
-      false -> {:error, :hash_verification_failed, [expected: event.hash, actual: final_hash]}
+    if final_hash == event.hash do
+      :ok
+    else
+      {:error, %HashVerificationFailed{expected: event.hash, actual: final_hash}}
     end
   end
 end
