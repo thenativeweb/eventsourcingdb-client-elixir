@@ -1,8 +1,8 @@
-defmodule Eventsourcingdb.Requests.ReadEventType do
+defmodule EventSourcingDB.Requests.ReadEventType do
   @moduledoc false
-  alias Eventsourcingdb.EventType
-  alias Eventsourcingdb.Requests.ReadEventType
-  alias Eventsourcingdb.{OneShotRequest, Endpoint}
+  alias EventSourcingDB.EventType
+  alias EventSourcingDB.Requests.ReadEventType
+  alias EventSourcingDB.{OneShotRequest, Endpoint}
 
   use Endpoint
   use OneShotRequest

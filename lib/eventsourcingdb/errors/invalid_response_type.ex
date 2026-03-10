@@ -1,4 +1,4 @@
-defmodule Eventsourcingdb.Errors.InvalidResponseType do
+defmodule EventSourcingDB.Errors.InvalidResponseType do
   defexception [:expected, :actual]
 
   @type t() :: %__MODULE__{expected: String.t(), actual: String.t()}

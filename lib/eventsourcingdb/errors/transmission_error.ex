@@ -1,4 +1,4 @@
-defmodule Eventsourcingdb.Errors.TransmissionError do
+defmodule EventSourcingDB.Errors.TransmissionError do
   defexception [:reason]
 
   @type t() :: %__MODULE__{reason: Exception.t()}

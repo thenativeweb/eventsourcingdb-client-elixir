@@ -1,4 +1,4 @@
-defmodule Eventsourcingdb.EventCandidate do
+defmodule EventSourcingDB.EventCandidate do
   @moduledoc """
   An event about to be written to the server.
   """

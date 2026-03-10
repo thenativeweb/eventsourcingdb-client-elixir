@@ -1,8 +1,8 @@
-defmodule EventsourcingdbTest.VerifyEvents do
-  alias Eventsourcingdb.Errors.HashVerificationFailed
-  alias Eventsourcingdb.Event
-  alias Eventsourcingdb.TestContainer
-  import EventsourcingdbTest.Utils
+defmodule EventSourcingDBTest.VerifyEvents do
+  alias EventSourcingDB.Errors.HashVerificationFailed
+  alias EventSourcingDB.Event
+  alias EventSourcingDB.TestContainer
+  import EventSourcingDBTest.Utils
   use ExUnit.Case, async: true
 
   import Testcontainers.ExUnit
@@ -15,7 +15,7 @@ defmodule EventsourcingdbTest.VerifyEvents do
     event_candidate = create_test_eventcandidate("/test", %{"value" => 1})
 
     written =
-      Eventsourcingdb.write_events!(client, [event_candidate])
+      EventSourcingDB.write_events!(client, [event_candidate])
 
     assert :ok == Event.verify_hash(Enum.at(written, 0))
   end
@@ -26,7 +26,7 @@ defmodule EventsourcingdbTest.VerifyEvents do
     event_candidate = create_test_eventcandidate("/test", %{"value" => 1})
 
     written =
-      Eventsourcingdb.write_events!(client, [event_candidate])
+      EventSourcingDB.write_events!(client, [event_candidate])
 
     event = Enum.at(written, 0)
     broken = Map.put(event, :hash, "BROKEN")

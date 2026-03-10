@@ -1,4 +1,4 @@
-defmodule Eventsourcingdb.Errors.ApiError do
+defmodule EventSourcingDB.Errors.ApiError do
   defexception [:reason]
 
   @type t() :: %__MODULE__{reason: String.t()}

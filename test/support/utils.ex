@@ -1,15 +1,15 @@
-defmodule EventsourcingdbTest.Utils do
+defmodule EventSourcingDBTest.Utils do
   @moduledoc false
-  alias Eventsourcingdb.Event
-  alias Eventsourcingdb.EventCandidate
+  alias EventSourcingDB.Event
+  alias EventSourcingDB.EventCandidate
   import ExUnit.Assertions
 
   @spec create_test_eventcandidate(String.t(), map()) :: EventCandidate.t()
   def create_test_eventcandidate(subject, data) do
     %EventCandidate{
-      type: "io.eventsourcingdb.test",
+      type: "io.EventSourcingDB.test",
       subject: subject,
-      source: "https://eventsourcingdb.io",
+      source: "https://EventSourcingDB.io",
       data: data
     }
   end

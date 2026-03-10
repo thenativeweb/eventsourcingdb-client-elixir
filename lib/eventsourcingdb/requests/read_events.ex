@@ -1,9 +1,9 @@
-defmodule Eventsourcingdb.Requests.ReadEvents do
+defmodule EventSourcingDB.Requests.ReadEvents do
   @moduledoc false
-  alias Eventsourcingdb.Requests.ReadEvents
-  alias Eventsourcingdb.ReadEventsOptions
-  alias Eventsourcingdb.Event
-  alias Eventsourcingdb.{StreamRequest, Endpoint}
+  alias EventSourcingDB.Requests.ReadEvents
+  alias EventSourcingDB.ReadEventsOptions
+  alias EventSourcingDB.Event
+  alias EventSourcingDB.{StreamRequest, Endpoint}
 
   use Endpoint
   use StreamRequest

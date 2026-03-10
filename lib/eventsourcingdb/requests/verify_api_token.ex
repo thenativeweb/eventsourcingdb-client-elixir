@@ -1,7 +1,7 @@
-defmodule Eventsourcingdb.Requests.VerifyApiToken do
+defmodule EventSourcingDB.Requests.VerifyApiToken do
   @moduledoc false
-  alias Eventsourcingdb.Errors.ApiTokenInvalid
-  alias Eventsourcingdb.{OneShotRequest, Endpoint}
+  alias EventSourcingDB.Errors.ApiTokenInvalid
+  alias EventSourcingDB.{OneShotRequest, Endpoint}
 
   use Endpoint
   use OneShotRequest
@@ -23,5 +23,5 @@ defmodule Eventsourcingdb.Requests.VerifyApiToken do
   def validate_response({:ok, %{status: 401}}), do: {:error, %ApiTokenInvalid{}}
   def validate_response(response), do: super(response)
 
-  def validate_body(%{"type" => "io.eventsourcingdb.api.api-token-verified"}), do: {:ok, nil}
+  def validate_body(%{"type" => "io.EventSourcingDB.api.api-token-verified"}), do: {:ok, nil}
 end

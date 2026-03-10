@@ -1,9 +1,9 @@
-defmodule Eventsourcingdb.Event do
+defmodule EventSourcingDB.Event do
   @moduledoc """
   An Event coming from the server.
   """
-  alias Eventsourcingdb.Errors.HashVerificationFailed
-  alias Eventsourcingdb.Event
+  alias EventSourcingDB.Errors.HashVerificationFailed
+  alias EventSourcingDB.Event
   use TypedStruct
 
   typedstruct do

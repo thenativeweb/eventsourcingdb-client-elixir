@@ -1,4 +1,4 @@
-defmodule Eventsourcingdb.FromLatestEventOptions do
+defmodule EventSourcingDB.FromLatestEventOptions do
   @moduledoc """
   Reading events from when a certain event occured.
   """
@@ -20,7 +20,7 @@ defmodule Eventsourcingdb.FromLatestEventOptions do
   end
 
   defimpl Jason.Encoder do
-    @spec encode(Eventsourcingdb.FromLatestEventOptions.t(), Jason.Encode.opts()) ::
+    @spec encode(EventSourcingDB.FromLatestEventOptions.t(), Jason.Encode.opts()) ::
             iodata()
     def encode(value, opts) do
       Jason.Encode.map(

@@ -1,4 +1,4 @@
-defmodule Eventsourcingdb.BoundOptions do
+defmodule EventSourcingDB.BoundOptions do
   @moduledoc """
   Reading events within a specific range.
 

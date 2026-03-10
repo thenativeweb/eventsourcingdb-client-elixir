@@ -1,4 +1,4 @@
-defmodule Eventsourcingdb.Errors.DBError do
+defmodule EventSourcingDB.Errors.DBError do
   defexception [:payload]
 
   @type t() :: %__MODULE__{payload: any()}

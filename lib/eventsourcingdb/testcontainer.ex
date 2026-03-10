@@ -1,4 +1,4 @@
-defmodule Eventsourcingdb.TestContainer do
+defmodule EventSourcingDB.TestContainer do
   @moduledoc """
   Using Testcontainers for Testing
 
@@ -8,7 +8,7 @@ defmodule Eventsourcingdb.TestContainer do
 
   ```elixir
   defmodule YourTest do
-    alias Eventsourcingdb.TestContainer
+    alias EventSourcingDB.TestContainer
     use ExUnit.Case
 
     import Testcontainers.ExUnit
@@ -20,7 +20,7 @@ defmodule Eventsourcingdb.TestContainer do
 
       # do sth with client
 
-      assert Eventsourcingdb.ping(client) == :ok
+      assert EventSourcingDB.ping(client) == :ok
     end
   end
   ```
@@ -50,7 +50,7 @@ defmodule Eventsourcingdb.TestContainer do
 
   """
 
-  alias Eventsourcingdb.Client
+  alias EventSourcingDB.Client
   alias Testcontainers.ContainerBuilder
   alias Testcontainers.Container
 
@@ -165,7 +165,7 @@ defmodule Eventsourcingdb.TestContainer do
   def get_signing_key(%Container{} = container), do: container.environment[:ESDB_SIGNING_KEY]
 
   @doc """
-  Gets the Eventsourcingdb client for the given container
+  Gets the EventSourcingDB client for the given container
 
   ## Parameters
 
@@ -174,7 +174,7 @@ defmodule Eventsourcingdb.TestContainer do
   ## Examples
 
       iex> TestContainer.get_client(container)
-      %Eventsourcingdb.Client{...}
+      %EventSourcingDB.Client{...}
   """
   def get_client(%Container{} = container) do
     Client.new(
@@ -184,12 +184,12 @@ defmodule Eventsourcingdb.TestContainer do
   end
 
   defimpl ContainerBuilder do
-    alias Eventsourcingdb.HttpWaitStrategy
-    alias Eventsourcingdb.Client
+    alias EventSourcingDB.HttpWaitStrategy
+    alias EventSourcingDB.Client
 
     import Container
 
-    @image_name "thenativeweb/eventsourcingdb"
+    @image_name "thenativeweb/EventSourcingDB"
 
     @impl true
     def build(builder) do

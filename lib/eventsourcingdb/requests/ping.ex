@@ -1,7 +1,7 @@
-defmodule Eventsourcingdb.Requests.Ping do
+defmodule EventSourcingDB.Requests.Ping do
   @moduledoc false
-  alias Eventsourcingdb.Errors.PingFailed
-  alias Eventsourcingdb.{OneShotRequest, Endpoint}
+  alias EventSourcingDB.Errors.PingFailed
+  alias EventSourcingDB.{OneShotRequest, Endpoint}
 
   use Endpoint
   use OneShotRequest
@@ -20,6 +20,6 @@ defmodule Eventsourcingdb.Requests.Ping do
   # region response
   # validation and parsing
 
-  def validate_body(%{"type" => "io.eventsourcingdb.api.ping-received"}), do: {:ok, nil}
+  def validate_body(%{"type" => "io.EventSourcingDB.api.ping-received"}), do: {:ok, nil}
   def validate_body(_payload), do: {:error, %PingFailed{}}
 end

@@ -1,7 +1,7 @@
-defmodule Eventsourcingdb.IsEventQLTrue do
+defmodule EventSourcingDB.IsEventQLTrue do
   @moduledoc """
   Precondition for writing events based on an
-  [EventQL](https://docs.eventsourcingdb.io/reference/eventql/) query.
+  [EventQL](https://docs.EventSourcingDB.io/reference/eventql/) query.
 
   Sometimes, you want to ensure that an event is only written if a more complex
   condition holds – for example, if no similar event has ever been recorded

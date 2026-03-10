@@ -1,7 +1,7 @@
-defmodule Eventsourcingdb.Requests.RunEventQL do
+defmodule EventSourcingDB.Requests.RunEventQL do
   @moduledoc false
-  alias Eventsourcingdb.Requests.RunEventQL
-  alias Eventsourcingdb.{StreamRequest, Endpoint}
+  alias EventSourcingDB.Requests.RunEventQL
+  alias EventSourcingDB.{StreamRequest, Endpoint}
 
   use Endpoint
   use StreamRequest

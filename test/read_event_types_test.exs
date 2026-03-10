@@ -1,8 +1,8 @@
-defmodule EventsourcingdbTest.ReadEventTypes do
-  alias Eventsourcingdb.EventCandidate
-  alias Eventsourcingdb.EventType
-  alias Eventsourcingdb.TestContainer
-  import EventsourcingdbTest.Utils
+defmodule EventSourcingDBTest.ReadEventTypes do
+  alias EventSourcingDB.EventCandidate
+  alias EventSourcingDB.EventType
+  alias EventSourcingDB.TestContainer
+  import EventSourcingDBTest.Utils
   use ExUnit.Case, async: true
 
   import Testcontainers.ExUnit
@@ -12,7 +12,7 @@ defmodule EventsourcingdbTest.ReadEventTypes do
   test "reads no event types if the database is empty", %{esdb: esdb} do
     client = TestContainer.get_client(esdb)
 
-    result = Eventsourcingdb.read_event_types!(client)
+    result = EventSourcingDB.read_event_types!(client)
 
     assert Enum.empty?(result)
   end
@@ -20,28 +20,28 @@ defmodule EventsourcingdbTest.ReadEventTypes do
   test "reads all event types", %{esdb: esdb} do
     client = TestContainer.get_client(esdb)
 
-    Eventsourcingdb.write_events!(client, [
+    EventSourcingDB.write_events!(client, [
       %EventCandidate{
         create_test_eventcandidate("/test/1", %{"value" => 21})
-        | type: "io.eventsourcingdb.test.foo"
+        | type: "io.EventSourcingDB.test.foo"
       },
       %EventCandidate{
         create_test_eventcandidate("/test/2", %{"value" => 42})
-        | type: "io.eventsourcingdb.test.bar"
+        | type: "io.EventSourcingDB.test.bar"
       }
     ])
 
-    result = Eventsourcingdb.read_event_types!(client) |> Enum.to_list()
+    result = EventSourcingDB.read_event_types!(client) |> Enum.to_list()
 
     assert result ==
              [
                %EventType{
-                 event_type: "io.eventsourcingdb.test.bar",
+                 event_type: "io.EventSourcingDB.test.bar",
                  is_phantom: false,
                  schema: nil
                },
                %EventType{
-                 event_type: "io.eventsourcingdb.test.foo",
+                 event_type: "io.EventSourcingDB.test.foo",
                  is_phantom: false,
                  schema: nil
                }
@@ -64,14 +64,14 @@ defmodule EventsourcingdbTest.ReadEventTypes do
       "required" => ["id", "name"]
     }
 
-    Eventsourcingdb.register_event_schema(client, "io.eventsourcingdb.test", schema)
+    EventSourcingDB.register_event_schema(client, "io.EventSourcingDB.test", schema)
 
-    result = Eventsourcingdb.read_event_types!(client) |> Enum.to_list()
+    result = EventSourcingDB.read_event_types!(client) |> Enum.to_list()
 
     assert result ==
              [
                %EventType{
-                 event_type: "io.eventsourcingdb.test",
+                 event_type: "io.EventSourcingDB.test",
                  is_phantom: true,
                  schema: schema
                }

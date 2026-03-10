@@ -1,4 +1,4 @@
-defmodule Eventsourcingdb.MixProject do
+defmodule EventSourcingDB.MixProject do
   use Mix.Project
 
   @version "0.5.0"
@@ -8,7 +8,7 @@ defmodule Eventsourcingdb.MixProject do
 
   def project do
     [
-      app: :eventsourcingdb,
+      app: :EventSourcingDB,
       version: @version,
       elixir: "~> 1.19",
       package: package(),
@@ -56,25 +56,25 @@ defmodule Eventsourcingdb.MixProject do
       extras: ["README.md"],
       groups_for_modules: [
         Events: [
-          Eventsourcingdb.Event,
-          Eventsourcingdb.EventCandidate,
-          Eventsourcingdb.EventType,
-          Eventsourcingdb.ManagementEvent
+          EventSourcingDB.Event,
+          EventSourcingDB.EventCandidate,
+          EventSourcingDB.EventType,
+          EventSourcingDB.ManagementEvent
         ],
         Preconditions: [
-          Eventsourcingdb.IsEventQLTrue,
-          Eventsourcingdb.IsSubjectOnEventId,
-          Eventsourcingdb.IsSubjectPopulated,
-          Eventsourcingdb.IsSubjectPristine
+          EventSourcingDB.IsEventQLTrue,
+          EventSourcingDB.IsSubjectOnEventId,
+          EventSourcingDB.IsSubjectPopulated,
+          EventSourcingDB.IsSubjectPristine
         ],
         "Request Options": [
-          Eventsourcingdb.BoundOptions,
-          Eventsourcingdb.FromLatestEventOptions,
-          Eventsourcingdb.ObserveEventsOptions,
-          Eventsourcingdb.ReadEventsOptions
+          EventSourcingDB.BoundOptions,
+          EventSourcingDB.FromLatestEventOptions,
+          EventSourcingDB.ObserveEventsOptions,
+          EventSourcingDB.ReadEventsOptions
         ],
         Testing: [
-          Eventsourcingdb.TestContainer
+          EventSourcingDB.TestContainer
         ]
       ]
     ]

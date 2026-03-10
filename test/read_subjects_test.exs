@@ -1,6 +1,6 @@
-defmodule EventsourcingdbTest.ReadSubjects do
-  alias Eventsourcingdb.TestContainer
-  import EventsourcingdbTest.Utils
+defmodule EventSourcingDBTest.ReadSubjects do
+  alias EventSourcingDB.TestContainer
+  import EventSourcingDBTest.Utils
   use ExUnit.Case, async: true
 
   import Testcontainers.ExUnit
@@ -9,7 +9,7 @@ defmodule EventsourcingdbTest.ReadSubjects do
 
   test "read no subjects when database is empty", %{esdb: esdb} do
     client = TestContainer.get_client(esdb)
-    result = Eventsourcingdb.read_subjects!(client, "/")
+    result = EventSourcingDB.read_subjects!(client, "/")
 
     assert Enum.empty?(result)
   end
@@ -22,9 +22,9 @@ defmodule EventsourcingdbTest.ReadSubjects do
       create_test_eventcandidate("/test/2", %{"value" => 42})
     ]
 
-    Eventsourcingdb.write_events!(client, event_candidates)
+    EventSourcingDB.write_events!(client, event_candidates)
 
-    result = Eventsourcingdb.read_subjects!(client, "/")
+    result = EventSourcingDB.read_subjects!(client, "/")
 
     assert ["/", "/test", "/test/1", "/test/2"] == Enum.to_list(result)
   end
@@ -37,9 +37,9 @@ defmodule EventsourcingdbTest.ReadSubjects do
       create_test_eventcandidate("/test/2", %{"value" => 42})
     ]
 
-    Eventsourcingdb.write_events!(client, event_candidates)
+    EventSourcingDB.write_events!(client, event_candidates)
 
-    result = Eventsourcingdb.read_subjects!(client, "/test")
+    result = EventSourcingDB.read_subjects!(client, "/test")
 
     assert ["/test", "/test/1", "/test/2"] == Enum.to_list(result)
   end

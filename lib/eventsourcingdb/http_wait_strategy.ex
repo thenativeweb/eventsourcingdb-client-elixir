@@ -1,4 +1,4 @@
-defmodule Eventsourcingdb.HttpWaitStrategy do
+defmodule EventSourcingDB.HttpWaitStrategy do
   @moduledoc false
 
   # See:
@@ -64,7 +64,7 @@ defmodule Eventsourcingdb.HttpWaitStrategy do
   # Private functions and implementations
 
   defimpl Testcontainers.WaitStrategy do
-    alias Eventsourcingdb.HttpWaitStrategy
+    alias EventSourcingDB.HttpWaitStrategy
     alias Testcontainers.Container
 
     @impl true

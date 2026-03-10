@@ -1,4 +1,4 @@
-defmodule Eventsourcingdb.IsSubjectPristine do
+defmodule EventSourcingDB.IsSubjectPristine do
   @moduledoc """
   Precondition for writing events to ensure the subject has no existing events.
 
