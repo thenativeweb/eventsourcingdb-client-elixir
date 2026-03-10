@@ -1,7 +1,7 @@
 defmodule Eventsourcingdb.MixProject do
   use Mix.Project
 
-  @version "0.4.1"
+  @version "0.5.0"
   @source_url "https://github.com/thenativeweb/eventsourcingdb-client-elixir"
   @homepage_url "https://www.eventsourcingdb.io/"
   @documentation_url "https://docs.eventsourcingdb.io/"
