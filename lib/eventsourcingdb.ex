@@ -622,7 +622,7 @@ defmodule Eventsourcingdb do
           ^expected_type ->
             {:ok, request_module.process(payload)}
 
-          # Forward Errors from the DB as :db_error
+          # Forward Errors from the DB as %DBError{}
           "error" ->
             {:error, %DBError{payload: payload}}
 
