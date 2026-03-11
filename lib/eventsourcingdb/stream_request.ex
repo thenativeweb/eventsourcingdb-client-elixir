@@ -1,6 +1,6 @@
-defmodule Eventsourcingdb.StreamRequest do
+defmodule EventSourcingDB.StreamRequest do
   @moduledoc false
-  alias Eventsourcingdb.StreamRequest
+  alias EventSourcingDB.StreamRequest
 
   @callback type() :: String.t()
   @callback process(map()) :: map()

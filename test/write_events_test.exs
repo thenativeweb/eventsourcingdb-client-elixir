@@ -1,11 +1,11 @@
-defmodule EventsourcingdbTest.WriteEvents do
-  alias Eventsourcingdb.Errors.ApiError
-  alias Eventsourcingdb.IsEventQLTrue
-  alias Eventsourcingdb.IsSubjectOnEventId
-  alias Eventsourcingdb.IsSubjectPopulated
-  alias Eventsourcingdb.IsSubjectPristine
-  alias Eventsourcingdb.TestContainer
-  import EventsourcingdbTest.Utils
+defmodule EventSourcingDBTest.WriteEvents do
+  alias EventSourcingDB.Errors.ApiError
+  alias EventSourcingDB.IsEventQLTrue
+  alias EventSourcingDB.IsSubjectOnEventId
+  alias EventSourcingDB.IsSubjectPopulated
+  alias EventSourcingDB.IsSubjectPristine
+  alias EventSourcingDB.TestContainer
+  import EventSourcingDBTest.Utils
   use ExUnit.Case, async: true
 
   import Testcontainers.ExUnit
@@ -18,7 +18,7 @@ defmodule EventsourcingdbTest.WriteEvents do
     event_candidate = create_test_eventcandidate("/test", %{"value" => 1})
 
     written =
-      Eventsourcingdb.write_events!(client, [event_candidate])
+      EventSourcingDB.write_events!(client, [event_candidate])
 
     assert_event_match_eventcandidate(Enum.at(written, 0), event_candidate)
   end
@@ -29,12 +29,12 @@ defmodule EventsourcingdbTest.WriteEvents do
     event_candidate = %{
       type: "io.eventsourcingdb.test",
       subject: "/test",
-      source: "https://eventsourcingdb.io",
+      source: "https://EventSourcingDB.io",
       data: %{"value" => 1}
     }
 
     written =
-      Eventsourcingdb.write_events!(client, [event_candidate])
+      EventSourcingDB.write_events!(client, [event_candidate])
 
     assert_event_match_eventcandidate(Enum.at(written, 0), event_candidate)
   end
@@ -43,7 +43,7 @@ defmodule EventsourcingdbTest.WriteEvents do
     client = TestContainer.get_client(esdb)
 
     event_candidates = create_numbered_eventcandidates(10)
-    written = Eventsourcingdb.write_events!(client, event_candidates)
+    written = EventSourcingDB.write_events!(client, event_candidates)
 
     assert_event_match_eventcandidates(written, event_candidates)
   end
@@ -54,7 +54,7 @@ defmodule EventsourcingdbTest.WriteEvents do
     event_candidate = create_test_eventcandidate("/test", %{"value" => 1})
 
     written =
-      Eventsourcingdb.write_events!(client, [event_candidate], [
+      EventSourcingDB.write_events!(client, [event_candidate], [
         %IsSubjectPristine{subject: event_candidate.subject}
       ])
 
@@ -66,10 +66,10 @@ defmodule EventsourcingdbTest.WriteEvents do
 
     event_candidate = create_test_eventcandidate("/test", %{"value" => 1})
 
-    Eventsourcingdb.write_events!(client, [event_candidate])
+    EventSourcingDB.write_events!(client, [event_candidate])
 
     written =
-      Eventsourcingdb.write_events(client, [event_candidate], [
+      EventSourcingDB.write_events(client, [event_candidate], [
         %IsSubjectPristine{subject: event_candidate.subject}
       ])
 
@@ -82,7 +82,7 @@ defmodule EventsourcingdbTest.WriteEvents do
     event_candidate = create_test_eventcandidate("/test", %{"value" => 1})
 
     written =
-      Eventsourcingdb.write_events(client, [event_candidate], [
+      EventSourcingDB.write_events(client, [event_candidate], [
         %IsSubjectPopulated{subject: event_candidate.subject}
       ])
 
@@ -93,14 +93,14 @@ defmodule EventsourcingdbTest.WriteEvents do
     client = TestContainer.get_client(esdb)
 
     initial_event =
-      Eventsourcingdb.write_events!(client, [create_test_eventcandidate("/test", %{"value" => 1})])
+      EventSourcingDB.write_events!(client, [create_test_eventcandidate("/test", %{"value" => 1})])
       |> Enum.at(0)
 
     expected_event_id = String.to_integer(initial_event.id) + 1
     event_candidate = create_test_eventcandidate("/test", %{"value" => 2})
 
     written =
-      Eventsourcingdb.write_events!(client, [event_candidate], [
+      EventSourcingDB.write_events!(client, [event_candidate], [
         %IsSubjectPopulated{subject: event_candidate.subject}
       ])
 
@@ -121,7 +121,7 @@ defmodule EventsourcingdbTest.WriteEvents do
     ]
 
     written =
-      Eventsourcingdb.write_events!(client, event_candidates, [
+      EventSourcingDB.write_events!(client, event_candidates, [
         %IsSubjectPristine{subject: Enum.at(event_candidates, 0).subject}
       ])
 
@@ -134,7 +134,7 @@ defmodule EventsourcingdbTest.WriteEvents do
     client = TestContainer.get_client(esdb)
 
     fill_event_candidate = create_test_eventcandidate("/test", %{"value" => 1})
-    Eventsourcingdb.write_events!(client, [fill_event_candidate])
+    EventSourcingDB.write_events!(client, [fill_event_candidate])
 
     event_candidates = [
       create_test_eventcandidate("/test", %{"value" => 1}),
@@ -142,7 +142,7 @@ defmodule EventsourcingdbTest.WriteEvents do
     ]
 
     written =
-      Eventsourcingdb.write_events(client, event_candidates, [
+      EventSourcingDB.write_events(client, event_candidates, [
         %IsSubjectPristine{subject: fill_event_candidate.subject}
       ])
 
@@ -155,10 +155,10 @@ defmodule EventsourcingdbTest.WriteEvents do
     client = TestContainer.get_client(esdb)
 
     event_candidate = create_test_eventcandidate("/test", %{"value" => 1})
-    event = Eventsourcingdb.write_events!(client, [event_candidate]) |> Enum.at(0)
+    event = EventSourcingDB.write_events!(client, [event_candidate]) |> Enum.at(0)
 
     written =
-      Eventsourcingdb.write_events(client, [event_candidate], [
+      EventSourcingDB.write_events(client, [event_candidate], [
         %IsSubjectOnEventId{subject: event_candidate.subject, event_id: event.id}
       ])
 
@@ -171,10 +171,10 @@ defmodule EventsourcingdbTest.WriteEvents do
     client = TestContainer.get_client(esdb)
 
     event_candidate = create_test_eventcandidate("/test", %{"value" => 1})
-    Eventsourcingdb.write_events!(client, [event_candidate]) |> Enum.at(0)
+    EventSourcingDB.write_events!(client, [event_candidate]) |> Enum.at(0)
 
     written =
-      Eventsourcingdb.write_events(client, [event_candidate], [
+      EventSourcingDB.write_events(client, [event_candidate], [
         %IsSubjectOnEventId{subject: event_candidate.subject, event_id: "100"}
       ])
 
@@ -190,7 +190,7 @@ defmodule EventsourcingdbTest.WriteEvents do
     ]
 
     written =
-      Eventsourcingdb.write_events(client, event_candidates, [
+      EventSourcingDB.write_events(client, event_candidates, [
         %IsSubjectOnEventId{subject: Enum.at(event_candidates, 0).subject, event_id: "100"}
       ])
 
@@ -202,7 +202,7 @@ defmodule EventsourcingdbTest.WriteEvents do
     client = TestContainer.get_client(esdb)
 
     event_candidate = create_test_eventcandidate("/test", %{"value" => 1})
-    event = Eventsourcingdb.write_events!(client, [event_candidate]) |> Enum.at(0)
+    event = EventSourcingDB.write_events!(client, [event_candidate]) |> Enum.at(0)
 
     event_candidates = [
       create_test_eventcandidate("/test2", %{"value" => 1}),
@@ -210,7 +210,7 @@ defmodule EventsourcingdbTest.WriteEvents do
     ]
 
     written =
-      Eventsourcingdb.write_events(client, event_candidates, [
+      EventSourcingDB.write_events(client, event_candidates, [
         %IsSubjectOnEventId{subject: event_candidate.subject, event_id: event.id}
       ])
 
@@ -222,7 +222,7 @@ defmodule EventsourcingdbTest.WriteEvents do
     client = TestContainer.get_client(esdb)
 
     event_candidate = create_test_eventcandidate("/test", %{"value" => 1})
-    Eventsourcingdb.write_events!(client, [event_candidate]) |> Enum.at(0)
+    EventSourcingDB.write_events!(client, [event_candidate]) |> Enum.at(0)
 
     event_candidates = [
       create_test_eventcandidate("/test2", %{"value" => 1}),
@@ -230,7 +230,7 @@ defmodule EventsourcingdbTest.WriteEvents do
     ]
 
     written =
-      Eventsourcingdb.write_events(client, event_candidates, [
+      EventSourcingDB.write_events(client, event_candidates, [
         %IsSubjectOnEventId{subject: event_candidate.subject, event_id: "100"}
       ])
 
@@ -246,7 +246,7 @@ defmodule EventsourcingdbTest.WriteEvents do
     ]
 
     written =
-      Eventsourcingdb.write_events(client, event_candidates, [
+      EventSourcingDB.write_events(client, event_candidates, [
         %IsEventQLTrue{query: "FROM e IN events PROJECT INTO COUNT() == 0"}
       ])
 
@@ -261,7 +261,7 @@ defmodule EventsourcingdbTest.WriteEvents do
         traceparent: "00-01234567012345670123456701234567-0123456701234567-00"
       )
 
-    event = Eventsourcingdb.write_events!(client, [event_candidate]) |> Enum.at(0)
+    event = EventSourcingDB.write_events!(client, [event_candidate]) |> Enum.at(0)
 
     assert_event_match_eventcandidate(event, event_candidate)
   end
@@ -275,7 +275,7 @@ defmodule EventsourcingdbTest.WriteEvents do
         tracestate: "state=12345"
       )
 
-    event = Eventsourcingdb.write_events!(client, [event_candidate]) |> Enum.at(0)
+    event = EventSourcingDB.write_events!(client, [event_candidate]) |> Enum.at(0)
 
     assert_event_match_eventcandidate(event, event_candidate)
   end

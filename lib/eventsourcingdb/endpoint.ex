@@ -1,6 +1,6 @@
-defmodule Eventsourcingdb.Endpoint do
+defmodule EventSourcingDB.Endpoint do
   @moduledoc false
-  alias Eventsourcingdb.Endpoint
+  alias EventSourcingDB.Endpoint
 
   @callback path() :: String.t()
   @callback method() :: :get | :post

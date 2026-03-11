@@ -1,11 +1,11 @@
-defmodule EventsourcingdbTest.ReadEvents do
-  alias Eventsourcingdb.Errors.TransmissionError
-  alias Eventsourcingdb.Client
-  alias Eventsourcingdb.FromLatestEventOptions
-  alias Eventsourcingdb.BoundOptions
-  alias Eventsourcingdb.ReadEventsOptions
-  alias Eventsourcingdb.TestContainer
-  import EventsourcingdbTest.Utils
+defmodule EventSourcingDBTest.ReadEvents do
+  alias EventSourcingDB.Errors.TransmissionError
+  alias EventSourcingDB.Client
+  alias EventSourcingDB.FromLatestEventOptions
+  alias EventSourcingDB.BoundOptions
+  alias EventSourcingDB.ReadEventsOptions
+  alias EventSourcingDB.TestContainer
+  import EventSourcingDBTest.Utils
   use ExUnit.Case, async: true
 
   import Testcontainers.ExUnit
@@ -13,7 +13,7 @@ defmodule EventsourcingdbTest.ReadEvents do
   container(:esdb, TestContainer.new())
 
   test "make read call", %{esdb: esdb} do
-    result = TestContainer.get_client(esdb) |> Eventsourcingdb.read_events("/")
+    result = TestContainer.get_client(esdb) |> EventSourcingDB.read_events("/")
     {:ok, events} = result
 
     assert match?({:ok, _}, result)
@@ -28,7 +28,7 @@ defmodule EventsourcingdbTest.ReadEvents do
         req_options: [retry: false]
       )
 
-    stream = Eventsourcingdb.read_events(client, "/")
+    stream = EventSourcingDB.read_events(client, "/")
 
     assert match?({:error, %TransmissionError{}}, stream)
   end
@@ -37,9 +37,9 @@ defmodule EventsourcingdbTest.ReadEvents do
     client = TestContainer.get_client(esdb)
 
     written =
-      Eventsourcingdb.write_events!(client, [create_test_eventcandidate("/test", %{"value" => 1})])
+      EventSourcingDB.write_events!(client, [create_test_eventcandidate("/test", %{"value" => 1})])
 
-    events = Eventsourcingdb.read_events!(client, "/test") |> Enum.to_list()
+    events = EventSourcingDB.read_events!(client, "/test") |> Enum.to_list()
 
     assert events == written
   end
@@ -50,9 +50,9 @@ defmodule EventsourcingdbTest.ReadEvents do
     event_candidates = create_numbered_eventcandidates(10)
 
     written =
-      Eventsourcingdb.write_events!(client, event_candidates)
+      EventSourcingDB.write_events!(client, event_candidates)
 
-    events = Eventsourcingdb.read_events!(client, "/test") |> Enum.to_list()
+    events = EventSourcingDB.read_events!(client, "/test") |> Enum.to_list()
 
     assert events == written
   end
@@ -62,10 +62,10 @@ defmodule EventsourcingdbTest.ReadEvents do
 
     event_candidate = create_test_eventcandidate("/test", %{"value" => 1})
 
-    Eventsourcingdb.write_events!(client, [event_candidate])
-    Eventsourcingdb.write_events!(client, [create_test_eventcandidate("/wrong", %{"value" => 1})])
+    EventSourcingDB.write_events!(client, [event_candidate])
+    EventSourcingDB.write_events!(client, [create_test_eventcandidate("/wrong", %{"value" => 1})])
 
-    events = Eventsourcingdb.read_events!(client, "/test") |> Enum.to_list()
+    events = EventSourcingDB.read_events!(client, "/test") |> Enum.to_list()
 
     assert length(events) == 1
     assert_event_match_eventcandidate(Enum.at(events, 0), event_candidate)
@@ -78,10 +78,10 @@ defmodule EventsourcingdbTest.ReadEvents do
     event_candidate_child = create_test_eventcandidate("/test/sub", %{"value" => 2})
 
     written =
-      Eventsourcingdb.write_events!(client, [event_candidate_parent, event_candidate_child])
+      EventSourcingDB.write_events!(client, [event_candidate_parent, event_candidate_child])
 
     events =
-      Eventsourcingdb.read_events!(client, "/test", %ReadEventsOptions{recursive: true})
+      EventSourcingDB.read_events!(client, "/test", %ReadEventsOptions{recursive: true})
       |> Enum.to_list()
 
     assert events == written
@@ -93,10 +93,10 @@ defmodule EventsourcingdbTest.ReadEvents do
     event_candidate_parent = create_test_eventcandidate("/test", %{"value" => 1})
     event_candidate_child = create_test_eventcandidate("/test/sub", %{"value" => 2})
 
-    Eventsourcingdb.write_events!(client, [event_candidate_parent, event_candidate_child])
+    EventSourcingDB.write_events!(client, [event_candidate_parent, event_candidate_child])
 
     events =
-      Eventsourcingdb.read_events!(client, "/test", %ReadEventsOptions{recursive: false})
+      EventSourcingDB.read_events!(client, "/test", %ReadEventsOptions{recursive: false})
       |> Enum.to_list()
 
     assert Enum.count(events) == 1
@@ -109,9 +109,9 @@ defmodule EventsourcingdbTest.ReadEvents do
     event_candidates = create_numbered_eventcandidates(10)
 
     written =
-      Eventsourcingdb.write_events!(client, event_candidates)
+      EventSourcingDB.write_events!(client, event_candidates)
 
-    events = Eventsourcingdb.read_events!(client, "/test") |> Enum.to_list()
+    events = EventSourcingDB.read_events!(client, "/test") |> Enum.to_list()
 
     assert events == written
   end
@@ -122,9 +122,9 @@ defmodule EventsourcingdbTest.ReadEvents do
     event_candidates = create_numbered_eventcandidates(10)
 
     written =
-      Eventsourcingdb.write_events!(client, event_candidates)
+      EventSourcingDB.write_events!(client, event_candidates)
 
-    events = Eventsourcingdb.read_events!(client, "/test") |> Enum.to_list() |> Enum.reverse()
+    events = EventSourcingDB.read_events!(client, "/test") |> Enum.to_list() |> Enum.reverse()
 
     assert events != written
   end
@@ -135,10 +135,10 @@ defmodule EventsourcingdbTest.ReadEvents do
     first_event = create_test_eventcandidate("/test", %{"value" => 23})
     second_event = create_test_eventcandidate("/test", %{"value" => 42})
 
-    Eventsourcingdb.write_events!(client, [first_event, second_event])
+    EventSourcingDB.write_events!(client, [first_event, second_event])
 
     events =
-      Eventsourcingdb.read_events!(client, "/test", %ReadEventsOptions{
+      EventSourcingDB.read_events!(client, "/test", %ReadEventsOptions{
         lower_bound: %BoundOptions{
           id: "1",
           type: :inclusive
@@ -157,10 +157,10 @@ defmodule EventsourcingdbTest.ReadEvents do
     first_event = create_test_eventcandidate("/test", %{"value" => 23})
     second_event = create_test_eventcandidate("/test", %{"value" => 42})
 
-    Eventsourcingdb.write_events!(client, [first_event, second_event])
+    EventSourcingDB.write_events!(client, [first_event, second_event])
 
     events =
-      Eventsourcingdb.read_events!(client, "/test", %ReadEventsOptions{
+      EventSourcingDB.read_events!(client, "/test", %ReadEventsOptions{
         upper_bound: %BoundOptions{
           id: "0",
           type: :inclusive
@@ -177,10 +177,10 @@ defmodule EventsourcingdbTest.ReadEvents do
     client = TestContainer.get_client(esdb)
 
     event_candidates = create_numbered_eventcandidates(10)
-    Eventsourcingdb.write_events!(client, event_candidates)
+    EventSourcingDB.write_events!(client, event_candidates)
 
     events =
-      Eventsourcingdb.read_events!(client, "/test", %ReadEventsOptions{
+      EventSourcingDB.read_events!(client, "/test", %ReadEventsOptions{
         from_latest_event: %FromLatestEventOptions{
           subject: "/",
           type: "io.eventsourcingdb.test.does-not-exist",
@@ -196,14 +196,14 @@ defmodule EventsourcingdbTest.ReadEvents do
     client = TestContainer.get_client(esdb)
 
     event_candidates = create_numbered_eventcandidates(10)
-    Eventsourcingdb.write_events!(client, event_candidates)
+    EventSourcingDB.write_events!(client, event_candidates)
 
-    Eventsourcingdb.write_events!(client, [create_test_eventcandidate("/marker", %{"value" => 1})])
+    EventSourcingDB.write_events!(client, [create_test_eventcandidate("/marker", %{"value" => 1})])
 
-    written = Eventsourcingdb.write_events!(client, event_candidates)
+    written = EventSourcingDB.write_events!(client, event_candidates)
 
     events =
-      Eventsourcingdb.read_events!(client, "/test", %ReadEventsOptions{
+      EventSourcingDB.read_events!(client, "/test", %ReadEventsOptions{
         from_latest_event: %FromLatestEventOptions{
           subject: "/marker",
           type: "io.eventsourcingdb.test",

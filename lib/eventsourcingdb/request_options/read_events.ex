@@ -1,4 +1,4 @@
-defmodule Eventsourcingdb.ReadEventsOptions do
+defmodule EventSourcingDB.ReadEventsOptions do
   @moduledoc """
   Read events filter options
   """
@@ -7,9 +7,9 @@ defmodule Eventsourcingdb.ReadEventsOptions do
   typedstruct do
     field :recursive, boolean(), enforce: true
     field :order, :chronological | :antichronological
-    field :from_latest_event, Eventsourcingdb.FromLatestEventOptions.t()
-    field :lower_bound, Eventsourcingdb.BoundOptions.t()
-    field :upper_bound, Eventsourcingdb.BoundOptions.t()
+    field :from_latest_event, EventSourcingDB.FromLatestEventOptions.t()
+    field :lower_bound, EventSourcingDB.BoundOptions.t()
+    field :upper_bound, EventSourcingDB.BoundOptions.t()
   end
 
   @spec new(keyword()) :: t()
@@ -22,7 +22,7 @@ defmodule Eventsourcingdb.ReadEventsOptions do
   end
 
   defimpl Jason.Encoder do
-    @spec encode(Eventsourcingdb.ReadEventsOptions.t(), Jason.Encode.opts()) :: iodata()
+    @spec encode(EventSourcingDB.ReadEventsOptions.t(), Jason.Encode.opts()) :: iodata()
     def encode(value, opts) do
       Jason.Encode.map(
         %{

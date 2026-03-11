@@ -1,7 +1,7 @@
-defmodule Eventsourcingdb.Requests.VerifyApiToken do
+defmodule EventSourcingDB.Requests.VerifyApiToken do
   @moduledoc false
-  alias Eventsourcingdb.Errors.ApiTokenInvalid
-  alias Eventsourcingdb.{OneShotRequest, Endpoint}
+  alias EventSourcingDB.Errors.ApiTokenInvalid
+  alias EventSourcingDB.{OneShotRequest, Endpoint}
 
   use Endpoint
   use OneShotRequest

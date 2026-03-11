@@ -1,4 +1,4 @@
-defmodule Eventsourcingdb.Errors.HashVerificationFailed do
+defmodule EventSourcingDB.Errors.HashVerificationFailed do
   defexception [:expected, :actual]
 
   @type t() :: %__MODULE__{expected: String.t(), actual: String.t()}

@@ -11,6 +11,7 @@ tmp/
 erl_crash.dump
 *.ez
 eventsourcingdb-*.tar
+EventSourcingDB-*.tar
 
 # OS generated files and directories
 .DS_Store

@@ -1,4 +1,4 @@
-defmodule Eventsourcingdb.IsSubjectOnEventId do
+defmodule EventSourcingDB.IsSubjectOnEventId do
   @moduledoc """
   Precondition for writing events to ensure the subject alread contains events.
 

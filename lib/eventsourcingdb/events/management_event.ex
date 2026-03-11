@@ -1,8 +1,8 @@
-defmodule Eventsourcingdb.ManagementEvent do
+defmodule EventSourcingDB.ManagementEvent do
   @moduledoc """
   Representing management events around EventSourcingDB.
   """
-  alias Eventsourcingdb.ManagementEvent
+  alias EventSourcingDB.ManagementEvent
   use TypedStruct
 
   typedstruct enforce: true do

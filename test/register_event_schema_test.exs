@@ -1,6 +1,6 @@
-defmodule EventsourcingdbTest.RegisterEventSchema do
-  alias Eventsourcingdb.Errors.ApiError
-  alias Eventsourcingdb.TestContainer
+defmodule EventSourcingDBTest.RegisterEventSchema do
+  alias EventSourcingDB.Errors.ApiError
+  alias EventSourcingDB.TestContainer
   use ExUnit.Case, async: true
 
   import Testcontainers.ExUnit
@@ -12,7 +12,7 @@ defmodule EventsourcingdbTest.RegisterEventSchema do
 
     result =
       client
-      |> Eventsourcingdb.register_event_schema("io.eventsourcingdb.test", %{
+      |> EventSourcingDB.register_event_schema("io.eventsourcingdb.test", %{
         "type" => "object",
         "properties" => %{
           "id" => %{
@@ -33,7 +33,7 @@ defmodule EventsourcingdbTest.RegisterEventSchema do
 
     result =
       client
-      |> Eventsourcingdb.register_event_schema("io.eventsourcingdb.test", %{"x" => "csie"})
+      |> EventSourcingDB.register_event_schema("io.eventsourcingdb.test", %{"x" => "csie"})
 
     assert match?({:error, %ApiError{}}, result)
   end

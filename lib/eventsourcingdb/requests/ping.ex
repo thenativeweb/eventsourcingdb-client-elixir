@@ -1,7 +1,7 @@
-defmodule Eventsourcingdb.Requests.Ping do
+defmodule EventSourcingDB.Requests.Ping do
   @moduledoc false
-  alias Eventsourcingdb.Errors.PingFailed
-  alias Eventsourcingdb.{OneShotRequest, Endpoint}
+  alias EventSourcingDB.Errors.PingFailed
+  alias EventSourcingDB.{OneShotRequest, Endpoint}
 
   use Endpoint
   use OneShotRequest

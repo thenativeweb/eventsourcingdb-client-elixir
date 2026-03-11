@@ -1,7 +1,7 @@
-defmodule Eventsourcingdb.Requests.WriteEvents do
+defmodule EventSourcingDB.Requests.WriteEvents do
   @moduledoc false
-  alias Eventsourcingdb.EventCandidate
-  alias Eventsourcingdb.{OneShotRequest, Endpoint, Event}
+  alias EventSourcingDB.EventCandidate
+  alias EventSourcingDB.{OneShotRequest, Endpoint, Event}
 
   use Endpoint
   use OneShotRequest

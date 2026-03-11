@@ -1,11 +1,11 @@
-defmodule Eventsourcingdb.Client do
+defmodule EventSourcingDB.Client do
   @moduledoc """
   A `Client` holds the connection parameters to your EventSourcingDB instance
 
   ```elixir
   base_url = "localhost:3000"
   api_token = "secret"
-  client = Eventsourcingdb.Client.new(base_url, api_token)
+  client = EventSourcingDB.Client.new(base_url, api_token)
   ```
   """
   use TypedStruct

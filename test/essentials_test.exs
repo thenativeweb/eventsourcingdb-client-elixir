@@ -1,8 +1,8 @@
-defmodule EventsourcingdbTest.Essentials do
-  alias Eventsourcingdb.Errors.ApiTokenInvalid
-  alias Eventsourcingdb.Errors.TransmissionError
-  alias Eventsourcingdb.Client
-  alias Eventsourcingdb.TestContainer
+defmodule EventSourcingDBTest.Essentials do
+  alias EventSourcingDB.Errors.ApiTokenInvalid
+  alias EventSourcingDB.Errors.TransmissionError
+  alias EventSourcingDB.Client
+  alias EventSourcingDB.TestContainer
   use ExUnit.Case, async: true
 
   import Testcontainers.ExUnit
@@ -10,7 +10,7 @@ defmodule EventsourcingdbTest.Essentials do
   container(:esdb, TestContainer.new(), shared: true)
 
   test "ping", %{esdb: esdb} do
-    assert Eventsourcingdb.ping(TestContainer.get_client(esdb)) == :ok
+    assert EventSourcingDB.ping(TestContainer.get_client(esdb)) == :ok
   end
 
   test "ping unavailable server" do
@@ -21,20 +21,20 @@ defmodule EventsourcingdbTest.Essentials do
         req_options: [retry: false]
       )
 
-    result = Eventsourcingdb.ping(client)
+    result = EventSourcingDB.ping(client)
 
     assert match?({:error, %TransmissionError{}}, result)
   end
 
   test "verify api token", %{esdb: esdb} do
-    assert Eventsourcingdb.verify_api_token(TestContainer.get_client(esdb)) == :ok
+    assert EventSourcingDB.verify_api_token(TestContainer.get_client(esdb)) == :ok
   end
 
   test "verify invalid api token", %{esdb: esdb} do
     client = TestContainer.get_client(esdb)
     invalid_client = Client.new(client.base_url, "invalidtoken")
 
-    result = Eventsourcingdb.verify_api_token(invalid_client)
+    result = EventSourcingDB.verify_api_token(invalid_client)
 
     assert match?({:error, %ApiTokenInvalid{}}, result)
   end

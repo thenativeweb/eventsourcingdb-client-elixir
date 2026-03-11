@@ -1,8 +1,8 @@
-defmodule Eventsourcingdb.EventType do
+defmodule EventSourcingDB.EventType do
   @moduledoc """
   Custom event type defined through a schema.
   """
-  alias Eventsourcingdb.EventType
+  alias EventSourcingDB.EventType
   use TypedStruct
 
   typedstruct do

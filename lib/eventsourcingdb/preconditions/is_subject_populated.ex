@@ -1,4 +1,4 @@
-defmodule Eventsourcingdb.IsSubjectPopulated do
+defmodule EventSourcingDB.IsSubjectPopulated do
   @moduledoc """
   Precondition for writing events to ensure the subject **already has at
   least one event**

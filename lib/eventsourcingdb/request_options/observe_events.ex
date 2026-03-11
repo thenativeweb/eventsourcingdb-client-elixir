@@ -1,4 +1,4 @@
-defmodule Eventsourcingdb.ObserveEventsOptions do
+defmodule EventSourcingDB.ObserveEventsOptions do
   @moduledoc """
   Observe events filter options
   """
@@ -6,8 +6,8 @@ defmodule Eventsourcingdb.ObserveEventsOptions do
 
   typedstruct do
     field :recursive, boolean(), enforce: true
-    field :from_latest_event, Eventsourcingdb.FromLatestEventOptions.t()
-    field :lower_bound, Eventsourcingdb.BoundOptions.t()
+    field :from_latest_event, EventSourcingDB.FromLatestEventOptions.t()
+    field :lower_bound, EventSourcingDB.BoundOptions.t()
   end
 
   @spec new(keyword()) :: t()
@@ -20,7 +20,7 @@ defmodule Eventsourcingdb.ObserveEventsOptions do
   end
 
   defimpl Jason.Encoder do
-    @spec encode(Eventsourcingdb.ObserveEventsOptions.t(), Jason.Encode.opts()) :: iodata()
+    @spec encode(EventSourcingDB.ObserveEventsOptions.t(), Jason.Encode.opts()) :: iodata()
     def encode(value, opts) do
       Jason.Encode.map(
         %{
