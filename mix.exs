@@ -35,6 +35,7 @@ defmodule EventSourcingDB.MixProject do
 
   defp package do
     [
+      name: "eventsourcingdb",
       description:
         "The official Elixir client SDK for EventSourcingDB – a purpose-built database for event sourcing.",
       links: %{
@@ -51,7 +52,7 @@ defmodule EventSourcingDB.MixProject do
       # can be changed to a module name, if you prefer
       main: "readme",
       source_url: @source_url,
-      source_ref: "v#{@version}",
+      source_ref: "#{@version}",
       # logo: "path/to/logo.png",
       extras: ["README.md"],
       groups_for_modules: [
