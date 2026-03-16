@@ -184,8 +184,8 @@ defmodule EventSourcingDB.TestContainer do
   end
 
   defimpl ContainerBuilder do
-    alias EventSourcingDB.HttpWaitStrategy
     alias EventSourcingDB.Client
+    alias Testcontainers.HttpWaitStrategy
 
     import Container
 
