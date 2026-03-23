@@ -1,9 +1,5 @@
 defmodule EventSourcingDB.Errors.SignatureVerificationFailed do
-  defexception [:expected, :actual]
+  defexception message: "Signature verification failed"
 
-  @type t() :: %__MODULE__{expected: String.t(), actual: String.t()}
-
-  def message(exception) do
-    "Event Hash verification failed. Expected: #{exception.expected}, actual: #{exception.actual}"
-  end
+  @type t() :: %__MODULE__{message: String.t()}
 end

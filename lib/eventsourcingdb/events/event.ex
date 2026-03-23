@@ -64,25 +64,13 @@ defmodule EventSourcingDB.Event do
     with {:ok, signature} <- check_signature_presence(event),
          :ok <- Event.verify_hash(event),
          {:ok, signature} <- check_signature_format(signature) do
-      # @TODO implement this methode
-      #
-      # Javascript/Node reference implementation:
-      # https://github.com/thenativeweb/eventsourcingdb-client-javascript/blob/9c7dbb79e90b6a8a55af2f3dcaf1398b783a4a4b/src/Event.ts#L89-L99
-      #
-      # Rust reference implementation:
-      # https://github.com/thenativeweb/eventsourcingdb-client-rust/blob/efa6d1190a61104b50df0131b05f866fded4e15e/src/event/event_types/event.rs#L237-L246
-      #
-      # use @signature_prefix
+      signature_bytes = Base.decode16!(signature, case: :lower)
+      hash_bytes = event.hash
 
-      # Failure attempts:
-
-      # result = :crypto.verify(:eddsa, :ed25519, key, event.hash,
-      # signature_bytes)
-
-      # :public_key.verify(event.hash, :none, signature_bytes, key)
-      # JOSE.JWK.verify(signature_bytes, key)
-
-      false
+      case :crypto.verify(:eddsa, :none, hash_bytes, signature_bytes, [key, :ed25519]) do
+        true -> :ok
+        false -> {:error, %SignatureVerificationFailed{}}
+      end
     end
   end
 
@@ -95,10 +83,8 @@ defmodule EventSourcingDB.Event do
   end
 
   defp check_signature_format(signature) do
-    signature = String.trim_leading(signature, @signature_prefix)
-
-    if signature do
-      {:ok, signature}
+    if String.starts_with?(signature, @signature_prefix) do
+      {:ok, String.trim_leading(signature, @signature_prefix)}
     else
       {:error, %MalformedSignature{}}
     end

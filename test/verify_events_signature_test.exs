@@ -1,7 +1,8 @@
-defmodule EventSourcingDBTest.VerifyEventsSignutare do
+defmodule EventSourcingDBTest.VerifyEventsSignature do
   alias EventSourcingDB.Event
   alias EventSourcingDB.TestContainer
   alias EventSourcingDB.Errors.SignatureMissing
+  alias EventSourcingDB.Errors.SignatureVerificationFailed
   alias EventSourcingDB.Errors.HashVerificationFailed
   import EventSourcingDBTest.Utils
   use ExUnit.Case
@@ -17,19 +18,19 @@ defmodule EventSourcingDBTest.VerifyEventsSignutare do
   test "verify signature with missing signature" do
     assert {:ok, esdb} = Testcontainers.start_container(TestContainer.new())
     client = TestContainer.get_client(esdb)
-    verification_key = TestContainer.get_verification_key(esdb)
+
+    {public_key, _private_key} = :crypto.generate_key(:eddsa, :ed25519)
 
     written =
       EventSourcingDB.write_events!(client, [create_test_eventcandidate("/test", %{"value" => 1})])
 
     event = Enum.at(written, 0)
 
-    assert match?({:error, %SignatureMissing{}}, Event.verify_signature(event, verification_key))
+    assert match?({:error, %SignatureMissing{}}, Event.verify_signature(event, public_key))
 
     assert :ok = Testcontainers.stop_container(esdb.container_id)
   end
 
-  # @TODO fix this test
   test "verify signature with broken event hash", %{esdb: esdb} do
     client = TestContainer.get_client(esdb)
     verification_key = TestContainer.get_verification_key(esdb)
@@ -46,7 +47,22 @@ defmodule EventSourcingDBTest.VerifyEventsSignutare do
            )
   end
 
-  # @TODO fix this test
+  test "verify signature with tampered signature", %{esdb: esdb} do
+    client = TestContainer.get_client(esdb)
+    verification_key = TestContainer.get_verification_key(esdb)
+
+    written =
+      EventSourcingDB.write_events!(client, [create_test_eventcandidate("/test", %{"value" => 1})])
+
+    event = Enum.at(written, 0)
+    tampered = Map.put(event, :signature, event.signature <> "0123456789abcdef")
+
+    assert match?(
+             {:error, %SignatureVerificationFailed{}},
+             Event.verify_signature(tampered, verification_key)
+           )
+  end
+
   test "verify event signature", %{esdb: esdb} do
     client = TestContainer.get_client(esdb)
     verification_key = TestContainer.get_verification_key(esdb)
