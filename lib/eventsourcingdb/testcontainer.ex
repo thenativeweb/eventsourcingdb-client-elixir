@@ -120,10 +120,23 @@ defmodule EventSourcingDB.TestContainer do
     %{config | api_token: api_token}
   end
 
+  # @TODO implement this method
   def with_signing_key(%__MODULE__{} = config) do
-    signing_key = JOSE.JWK.generate_key({:okp, :Ed25519})
+    # reference implementation:
+    # Javascript:
+    # https://github.com/thenativeweb/eventsourcingdb-client-javascript/blob/9c7dbb79e90b6a8a55af2f3dcaf1398b783a4a4b/src/Container.ts#L30-L34
+    # Rust:
+    # https://github.com/thenativeweb/eventsourcingdb-client-rust/blob/efa6d1190a61104b50df0131b05f866fded4e15e/src/container.rs#L117-L121
 
-    %{config | signing_key: signing_key}
+    # Failing attempts:
+
+    {public_key, private_key} = :crypto.generate_key(:eddsa, :ed25519)
+
+    %{config | signing_key: {public_key, private_key}}
+
+    # signing_key = JOSE.JWK.generate_key({:okp, :Ed25519})
+
+    # %{config | signing_key: signing_key}
   end
 
   @doc """
@@ -163,8 +176,54 @@ defmodule EventSourcingDB.TestContainer do
   """
   def get_api_token(%Container{} = container), do: container.environment[:ESDB_API_TOKEN]
 
+  # @TODO implement `get_signing_key()` and `get_verification_key()`
+  # see failing attempts below (there might be good stuff in there)
+
   def get_signing_key(%Container{} = container),
-    do: Base.url_decode64!(container.environment[:ESDB_SIGNING_KEY], padding: false)
+    do: container.environment[:ESDB_SIGNING_KEY]
+
+  def get_verification_key(%Container{} = container),
+    do: container.environment[:ESDB_VERIFICATION_KEY]
+
+  # Failure attempts:
+
+  # def get_verification_key(%Container{} = container) do
+  #   {_, public_key} = get_signing_key(container)
+
+  #   public_key
+  # end
+
+  # def get_signing_key(%Container{} = container),
+  #   do:
+  #     container.environment[:ESDB_SIGNING_KEY]
+  #     |> Jason.decode!()
+  #     |> JOSE.JWK.from_map()
+
+  # def get_verification_key(%Container{} = container) do
+  #   {key_type, {_, key_data}} = get_key(container) |> JOSE.JWK.to_public() |> JOSE.JWK.to_key()
+
+  #   IO.inspect(key_type, label: "key type")
+  #   IO.inspect(key_data, label: "key data")
+  #   # {:ed_pub_key, key_data, :ed25519}
+  #   key_data
+  #   # {_module, public} = get_key(container) |> JOSE.JWK.to_public()
+  #   # public
+  # end
+
+  # def get_signing_key(%Container{} = container),
+  #   do: Base.url_decode64!(container.environment[:ESDB_SIGNING_KEY], padding: false)
+
+  # def get_signing_key(%Container{} = container) do
+  #   IO.inspect(container.environment[:ESDB_SIGNING_KEY], label: "env signing key")
+
+  #   %{public_key: public_key, private_key: private_key} =
+  #     Jason.decode!(container.environment[:ESDB_SIGNING_KEY])
+
+  #   private_key_decoded = Base.decode64(private_key)
+  #   public_key_decoded = Base.decode64(public_key)
+
+  #   {private_key_decoded, public_key_decoded}
+  # end
 
   @doc """
   Gets the EventSourcingDB client for the given container
@@ -196,8 +255,6 @@ defmodule EventSourcingDB.TestContainer do
 
     @impl true
     def build(config) do
-      IO.inspect(config, label: "build, config")
-
       cmd = [
         "run",
         "--api-token",
@@ -219,44 +276,120 @@ defmodule EventSourcingDB.TestContainer do
           )
         )
 
+      # @TODO parametrize the container when a signing_key is present
       container =
         if config.signing_key do
-          {_module, key_map} = JOSE.JWK.to_map(config.signing_key)
+          # @TODO
+          # use config.signing_key to store what's needed in `:ESDB_SIGNING_KEY`
+          # of `with_environment`. Maybe also use `:ESDB_VERIFICATION_KEY`, if
+          # this eases the use of map, etc.
+
+          # Reference implementation:
+          # Javascript:
+          # https://github.com/thenativeweb/eventsourcingdb-client-javascript/blob/9c7dbb79e90b6a8a55af2f3dcaf1398b783a4a4b/src/Container.ts#L53-L62
+          # Rust: https://github.com/thenativeweb/eventsourcingdb-client-rust/blob/efa6d1190a61104b50df0131b05f866fded4e15e/src/container.rs#L149-L158
 
           container
           |> with_environment(
             :ESDB_SIGNING_KEY,
-            Jason.encode!(key_map)
+            "signing_key"
           )
+
+          #       |> with_copy_to("/etc/esdb/signing_key.pem", private_pem)
         else
           container
         end
 
-      cmd =
-        if config.signing_key do
-          cmd ++
-            [
-              "--signing-key-file=/etc/esdb/signing_key.pem"
-            ]
-        else
-          cmd
-        end
-
-      IO.inspect(cmd, label: "cmd")
+      # @TODO this should be good to uncomment then
+      # cmd =
+      #   if config.signing_key do
+      #     cmd ++
+      #       [
+      #         "--signing-key-file=/etc/esdb/signing_key.pem"
+      #       ]
+      #   else
+      #     cmd
+      #   end
 
       container |> with_cmd(cmd)
+
+      # Failing attempts:
+
+      #   container =
+      #     if config.signing_key do
+      #       # {_module, key_map} = JOSE.JWK.to_map(config.signing_key)
+      #       # {_module, pem} = JOSE.JWK.to_pem(config.signing_key)
+
+      #       {public_key, private_key} = config.signing_key
+
+      #       jwk =
+      #         JOSE.JWK.from_map(%{
+      #           "kty" => "OKP",
+      #           "crv" => "Ed25519",
+      #           "d" => Base.url_encode64(private_key, padding: false),
+      #           "x" => Base.url_encode64(public_key, padding: false)
+      #         })
+
+      #       {_, private_pem} = JOSE.JWK.to_pem(jwk)
+
+      #       # private_key_asn1 =
+      #       #   :public_key.der_encode(:PrivateKeyInfo, {:ed_priv_key, private_key, :ed25519})
+
+      #       # erl_priv_key = {:ed_priv_key, private_key, :ed25519}
+      #       # priv_entry = :public_key.pem_entry_encode(:PrivateKeyInfo, private_key_asn1)
+      #       # priv_entry = :public_key.pem_entry_encode(:PrivateKeyInfo, private_key)
+      #       # private_pem = :public_key.pem_encode([priv_entry])
+      #       # private_pem = :public_key.pem_encode([{:PrivateKeyInfo, private_key}])
+
+      #       private_key_encoded = Base.encode64(private_key)
+      #       public_key_encoded = Base.encode64(public_key)
+
+      #       # pem = """
+      #       # -----BEGIN PRIVATE KEY-----
+      #       # #{private_key_encoded}
+      #       # -----END PRIVATE KEY-----
+      #       # """
+
+      #       # IO.inspect(pem, label: "pem")
+      #       IO.inspect(private_pem, label: "priv_pem")
+
+      #       IO.inspect(%{public_key: public_key_encoded, private_key: private_key_encoded},
+      #         label: "keys"
+      #       )
+
+      #       IO.inspect(
+      #         Jason.encode!(%{public_key: public_key_encoded, private_key: private_key_encoded}),
+      #         label: "json keys"
+      #       )
+
+      #       IO.inspect(
+      #         Jason.encode!(%{
+      #           "public_key" => public_key_encoded,
+      #           "private_key" => private_key_encoded
+      #         }),
+      #         label: "json keys map"
+      #       )
+
+      #       container
+      #       |> with_copy_to("/etc/esdb/signing_key.pem", private_pem)
+      #       |> with_environment(
+      #         :ESDB_SIGNING_KEY,
+      #         private_key_encoded
+      #       )
+      #       |> with_environment(
+      #         :ESDB_VERIFICATION_KEY,
+      #         private_key_encoded
+      #       )
+      #     else
+      #       container
+      #     end
+    end
+
+    defp to_pem(key) do
+      :public_key.pem_entry_encode(:EdDSA25519PrivateKey, key)
     end
 
     @impl true
-    def after_start(config, container, conn) do
-      # see: https://github.com/testcontainers/testcontainers-elixir/issues/240
-      if config.signing_key do
-        {_, pem} = JOSE.JWK.to_pem(config.signing_key)
-
-        Docker.Api.put_file(container.container_id, conn, "/etc/esdb/", "signing-key.pem", pem)
-      end
-
-      :ok
-    end
+    def after_start(_config, _container, _conn), do: :ok
   end
 end

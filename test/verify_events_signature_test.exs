@@ -1,7 +1,9 @@
-defmodule EventsourcingdbTest.VerifyEventsSignutare do
-  alias Eventsourcingdb.Event
-  alias Eventsourcingdb.TestContainer
-  import EventsourcingdbTest.Utils
+defmodule EventSourcingDBTest.VerifyEventsSignutare do
+  alias EventSourcingDB.Event
+  alias EventSourcingDB.TestContainer
+  alias EventSourcingDB.Errors.SignatureMissing
+  alias EventSourcingDB.Errors.HashVerificationFailed
+  import EventSourcingDBTest.Utils
   use ExUnit.Case
 
   import Testcontainers.ExUnit
@@ -12,30 +14,48 @@ defmodule EventsourcingdbTest.VerifyEventsSignutare do
     |> TestContainer.with_signing_key()
   )
 
-  test "verify event signature", %{esdb: esdb} do
+  test "verify signature with missing signature" do
+    assert {:ok, esdb} = Testcontainers.start_container(TestContainer.new())
     client = TestContainer.get_client(esdb)
-
-    event_candidate = create_test_eventcandidate("/test", %{"value" => 1})
+    verification_key = TestContainer.get_verification_key(esdb)
 
     written =
-      Eventsourcingdb.write_events!(client, [event_candidate])
+      EventSourcingDB.write_events!(client, [create_test_eventcandidate("/test", %{"value" => 1})])
 
-    # assert :ok == Event.verify_hash(Enum.at(written, 0))
+    event = Enum.at(written, 0)
 
-    assert true
+    assert match?({:error, %SignatureMissing{}}, Event.verify_signature(event, verification_key))
+
+    assert :ok = Testcontainers.stop_container(esdb.container_id)
   end
 
-  # test "verify broken event hash", %{esdb: esdb} do
-  #   client = TestContainer.get_client(esdb)
+  # @TODO fix this test
+  test "verify signature with broken event hash", %{esdb: esdb} do
+    client = TestContainer.get_client(esdb)
+    verification_key = TestContainer.get_verification_key(esdb)
 
-  #   event_candidate = create_test_eventcandidate("/test", %{"value" => 1})
+    written =
+      EventSourcingDB.write_events!(client, [create_test_eventcandidate("/test", %{"value" => 1})])
 
-  #   written =
-  #     Eventsourcingdb.write_events!(client, [event_candidate])
+    event = Enum.at(written, 0)
+    broken = Map.put(event, :hash, "BROKEN")
 
-  #   event = Enum.at(written, 0)
-  #   broken = Map.put(event, :hash, "BROKEN")
+    assert match?(
+             {:error, %HashVerificationFailed{}},
+             Event.verify_signature(broken, verification_key)
+           )
+  end
 
-  #   assert match?({:error, :hash_verification_failed, _}, Event.verify_hash(broken))
-  # end
+  # @TODO fix this test
+  test "verify event signature", %{esdb: esdb} do
+    client = TestContainer.get_client(esdb)
+    verification_key = TestContainer.get_verification_key(esdb)
+
+    written =
+      EventSourcingDB.write_events!(client, [create_test_eventcandidate("/test", %{"value" => 1})])
+
+    event = Enum.at(written, 0)
+
+    assert :ok == Event.verify_signature(event, verification_key)
+  end
 end
