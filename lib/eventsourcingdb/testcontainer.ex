@@ -230,13 +230,13 @@ defmodule EventSourcingDB.TestContainer do
 
           container =
             container
-            |> with_copy_to("/etc/esdb/signing-key.pem", pem)
+            |> with_copy_to("/tmp/signing-key.pem", pem)
             |> with_environment(
               :ESDB_VERIFICATION_KEY,
               Base.encode16(public_key, case: :lower)
             )
 
-          cmd = cmd ++ ["--signing-key-file=/etc/esdb/signing-key.pem"]
+          cmd = cmd ++ ["--signing-key-file=/tmp/signing-key.pem"]
 
           {container, cmd}
         else
