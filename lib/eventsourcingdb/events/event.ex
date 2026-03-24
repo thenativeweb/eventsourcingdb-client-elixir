@@ -43,7 +43,7 @@ defmodule EventSourcingDB.Event do
       __MODULE__,
       value
       |> Map.new(fn {k, v} ->
-        key = Map.get(@key_mapping, k, String.to_existing_atom(k))
+        key = Map.get_lazy(@key_mapping, k, fn -> String.to_existing_atom(k) end)
         {key, v}
       end)
     )
