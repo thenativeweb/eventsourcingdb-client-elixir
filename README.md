@@ -1,117 +1,113 @@
 # EventSourcingDB
 
-The official Elixir client SDK for [EventSourcingDB](https://www.EventSourcingDB.io) – a purpose-built database for event sourcing.
+The official Elixir client SDK for [EventSourcingDB](https://www.eventsourcingdb.io) – a purpose-built database for event sourcing.
 
-EventSourcingDB enables you to build and operate event-driven applications with
-native support for writing, reading, and observing events. This client SDK
-provides convenient access to its capabilities in Elixir (read the [Elixir SDK documentation](https://hexdocs.pm/EventSourcingDB)).
+EventSourcingDB enables you to build and operate event-driven applications with native support for writing, reading, and observing events. This client SDK provides convenient access to its capabilities in Elixir.
 
-For more information on EventSourcingDB, see its [official documentation](https://docs.EventSourcingDB.io/).
+For more information on EventSourcingDB, see its [official documentation](https://docs.eventsourcingdb.io/).
 
 This client SDK includes support for [Testcontainers](https://testcontainers.com/) to spin up EventSourcingDB instances in integration tests. For details, see [Using Testcontainers](#using-testcontainers).
 
 ## Getting Started
 
-The package can be installed by adding `EventSourcingDB` to your list of dependencies in `mix.exs`:
+The package can be installed by adding `eventsourcingdb` to your list of dependencies in `mix.exs`:
 
 ```elixir
 def deps do
   [
-    {:EventSourcingDB, "~> 0.1.0"}
+    {:eventsourcingdb, "~> 0.6.0"}
   ]
 end
 ```
 
-Start with a `Client` that holds the connection parameters to your
-EventSourcingDB instance:
+Create a client by providing the URL of your EventSourcingDB instance and the API token to use:
 
 ```elixir
-base_url = "localhost:3000"
-api_token = "secret"
-client = EventSourcingDB.Client.new(base_url, api_token)
+client = EventSourcingDB.Client.new("http://localhost:3000", "secret")
 ```
 
-Now every request will take the client as its first param.
+Then call the `ping` function to check whether the instance is reachable. If it is not, the function will return an error:
+
+```elixir
+:ok = EventSourcingDB.ping(client)
+```
+
+*Note that `ping` does not require authentication, so the call may succeed even if the API token is invalid.*
+
+If you want to verify the API token, call `verify_api_token`. If the token is invalid, the function will return an error:
+
+```elixir
+:ok = EventSourcingDB.verify_api_token(client)
+```
 
 ## Writing Events
 
 Call the `write_events` function and hand over a list with one or more events. You do not have to provide all event fields – some are automatically added by the server.
 
-Specify `source`, `subject`, `type`, and `data` according to the
-[CloudEvents](https://docs.EventSourcingDB.io/fundamentals/cloud-events/)
-format.
+Specify `source`, `subject`, `type`, and `data` according to the [CloudEvents](https://docs.eventsourcingdb.io/fundamentals/cloud-events/) format.
 
-The function returns the written events, including the fields added by the
-server:
+The function returns the written events, including the fields added by the server:
 
 ```elixir
 event = %EventSourcingDB.EventCandidate{
-  source: "https://library.EventSourcingDB.io",
+  source: "https://library.eventsourcingdb.io",
   subject: "/books/42",
   type: "io.eventsourcingdb.library.book-acquired",
   data: %{
-    "title" => "2001 - A Space Odyssey",
+    "title" => "2001 – A Space Odyssey",
     "author" => "Arthur C. Clarke",
-    "isbn" => "978-0756906788",
+    "isbn" => "978-0756906788"
   }
 }
 
-written = EventSourcingDB.write_events(client, [event])
-
-case written do
+case EventSourcingDB.write_events(client, [event]) do
   {:ok, events} -> # ...
-  {:error, type, reason} -> # ..
+  {:error, reason} -> # ...
 end
 ```
 
 ### Using the `IsSubjectPristine` precondition
 
-If you only want to write events in case a subject (such as `/books/42`) does not yet have any events, use the `IsSubjectPristine` precondition to create a precondition and pass it in a vector as the second argument:
+If you only want to write events in case a subject (such as `/books/42`) does not yet have any events, use the `IsSubjectPristine` precondition and pass it in a list as the third argument:
 
 ```elixir
-written = EventSourcingDB.write_events(
+case EventSourcingDB.write_events(
   client,
   [event],
   [%EventSourcingDB.IsSubjectPristine{subject: "/books/42"}]
-)
-
-case written do
+) do
   {:ok, events} -> # ...
-  {:error, type, reason} -> # ..
+  {:error, reason} -> # ...
 end
 ```
 
 ### Using the `IsSubjectPopulated` precondition
 
-If you only want to write events in case a subject (such as `/books/42`) already has at least one event, use the `IsSubjectPopulated` precondition to create a precondition and pass it in a vector as the second argument:
+If you only want to write events in case a subject (such as `/books/42`) already has at least one event, use the `IsSubjectPopulated` precondition and pass it in a list as the third argument:
 
 ```elixir
-written = EventSourcingDB.write_events(
+case EventSourcingDB.write_events(
   client,
   [event],
   [%EventSourcingDB.IsSubjectPopulated{subject: "/books/42"}]
-)
-
-case written do
+) do
   {:ok, events} -> # ...
-  {:error, type, reason} -> # ..
+  {:error, reason} -> # ...
 end
 ```
 
 ### Using the `IsSubjectOnEventId` precondition
 
-If you only want to write events in case the last event of a subject (such as `/books/42`) has a specific ID (e.g., `0`), use the `IsSubjectOnEventId` precondition to create a precondition and pass it in a vector as the second argument:
+If you only want to write events in case the last event of a subject (such as `/books/42`) has a specific ID (e.g., `0`), use the `IsSubjectOnEventId` precondition and pass it in a list as the third argument:
 
 ```elixir
-written = EventSourcingDB.write_events(
+case EventSourcingDB.write_events(
   client,
   [event],
   [%EventSourcingDB.IsSubjectOnEventId{subject: "/books/42", event_id: "0"}]
-)
-
-case written do
+) do
   {:ok, events} -> # ...
-  {:error, type, reason} -> # ..
+  {:error, reason} -> # ...
 end
 ```
 
@@ -119,36 +115,33 @@ end
 
 ### Using the `IsEventQLQueryTrue` precondition
 
-If you want to write events depending on an EventQL query, use the `IsEventQLQueryTrue` precondition to create a precondition and pass it in a vector as the second argument:
+If you want to write events depending on an EventQL query, use the `IsEventQLQueryTrue` precondition:
 
 ```elixir
-written = EventSourcingDB.write_events(
+case EventSourcingDB.write_events(
   client,
   [event],
   [%EventSourcingDB.IsEventQLQueryTrue{
-    query: "FROM e IN events WHERE e.type == 'io.eventsourcingdb.library.book-borrowed' PROJECT INTO COUNT () < 10"
-   }]
-)
-
-case written do
+    query: "FROM e IN events WHERE e.type == 'io.eventsourcingdb.library.book-borrowed' PROJECT INTO COUNT() < 10"
+  }]
+) do
   {:ok, events} -> # ...
-  {:error, type, reason} -> # ..
+  {:error, reason} -> # ...
 end
 ```
 
+*Note that the query must return a single row with a single value, which is interpreted as a boolean.*
+
 ## Reading Events
 
-To read all events of a subject, call the `read_events` function with the
-subject and an options object.
+To read all events of a subject, call the `read_events` function with the subject and an options struct.
 
 The function returns a stream from which you can retrieve one event at a time:
 
 ```elixir
-result = EventSourcingDB.read_events(client, "/books/42")
-
-case result do
+case EventSourcingDB.read_events(client, "/books/42") do
   {:ok, events} -> Enum.to_list(events)
-  {:error, type, reason} -> # handle error here
+  {:error, reason} -> # ...
 end
 ```
 
@@ -157,19 +150,21 @@ end
 If you want to read not only all the events of a subject, but also the events of all nested subjects, set the `recursive` option to `true`:
 
 ```elixir
-result = EventSourcingDB.read_events(
+EventSourcingDB.read_events(
   client,
   "/books/42",
   %EventSourcingDB.ReadEventsOptions{recursive: true}
 )
 ```
 
+This also allows you to read *all* events ever written. To do so, provide `/` as the subject and set `recursive` to `true`, since all subjects are nested under the root subject.
+
 ### Reading in Anti-Chronological Order
 
-By default, events are read in chronological order. To read in anti-chronological order, provide the `order` option and set it using the `:antichronological` ordering:
+By default, events are read in chronological order. To read in anti-chronological order, provide the `order` option and set it to `:antichronological`:
 
 ```elixir
-result = EventSourcingDB.read_events(
+EventSourcingDB.read_events(
   client,
   "/books/42",
   %EventSourcingDB.ReadEventsOptions{
@@ -179,7 +174,7 @@ result = EventSourcingDB.read_events(
 )
 ```
 
-*Note that you can also use the `Chronological` ordering to explicitly enforce the default order.*
+*Note that you can also use `:chronological` to explicitly enforce the default order.*
 
 ### Specifying Bounds
 
@@ -188,7 +183,7 @@ Sometimes you do not want to read all events, but only a range of events. For th
 Specify the ID and whether to include or exclude it, for both the lower and upper bound:
 
 ```elixir
-result = EventSourcingDB.read_events(
+EventSourcingDB.read_events(
   client,
   "/books/42",
   %EventSourcingDB.ReadEventsOptions{
@@ -212,34 +207,34 @@ To read starting from the latest event of a given type, provide the `from_latest
 Possible options are `:read_nothing`, which skips reading entirely, or `:read_everything`, which effectively behaves as if `from_latest_event` was not specified:
 
 ```elixir
-result = EventSourcingDB.read_events(
+EventSourcingDB.read_events(
   client,
   "/books/42",
   %EventSourcingDB.ReadEventsOptions{
     recursive: false,
     from_latest_event: %EventSourcingDB.FromLatestEventOptions{
       subject: "/books/42",
-      type: "io.eventsourcingdb.library.book-borrowed"
+      type: "io.eventsourcingdb.library.book-borrowed",
       if_event_is_missing: :read_everything
     }
   }
 )
 ```
 
-*Note that `from_latest_event` and `lower_bound` can not be provided at the sametime.*
+*Note that `from_latest_event` and `lower_bound` can not be provided at the same time.*
 
 ## Running EventQL Queries
 
-To run an EventQL query, call the `run_eventql_query` function and provide the query as argument. The function returns a stream.
+To run an EventQL query, call the `run_eventql_query` function and provide the query as argument. The function returns a stream:
 
 ```elixir
-result = EventSourcingDB.run_eventql_query(client, "FROM e IN events PROJECT INTO e")
-
-case result do
-  {:ok, events} -> Enum.to_list(events)
-  {:error, type, reason} -> # handle error here
+case EventSourcingDB.run_eventql_query(client, "FROM e IN events PROJECT INTO e") do
+  {:ok, rows} -> Enum.to_list(rows)
+  {:error, reason} -> # ...
 end
 ```
+
+*Note that each row returned by the stream matches the projection specified in your query.*
 
 ## Observing Events
 
@@ -248,11 +243,9 @@ To observe all events of a subject, call the `observe_events` function with the 
 The function returns a stream from which you can retrieve one event at a time:
 
 ```elixir
-result = EventSourcingDB.observe_events(client, "/books/42")
-
-case result do
+case EventSourcingDB.observe_events(client, "/books/42") do
   {:ok, events} -> Enum.to_list(events)
-  {:error, type, reason} -> # handle error here
+  {:error, reason} -> # ...
 end
 ```
 
@@ -261,7 +254,7 @@ end
 If you want to observe not only all the events of a subject, but also the events of all nested subjects, set the `recursive` option to `true`:
 
 ```elixir
-result = EventSourcingDB.observe_events(
+EventSourcingDB.observe_events(
   client,
   "/books/42",
   %EventSourcingDB.ObserveEventsOptions{
@@ -270,9 +263,7 @@ result = EventSourcingDB.observe_events(
 )
 ```
 
-This also allows you to observe *all* events ever written. To do so, provide `/`
-as the subject and set `recursive` to `true`, since all subjects are nested
-under the root subject.
+This also allows you to observe *all* events ever written. To do so, provide `/` as the subject and set `recursive` to `true`, since all subjects are nested under the root subject.
 
 ### Specifying Bounds
 
@@ -281,7 +272,7 @@ Sometimes you do not want to observe all events, but only a range of events. For
 Specify the ID and whether to include or exclude it:
 
 ```elixir
-result = EventSourcingDB.observe_events(
+EventSourcingDB.observe_events(
   client,
   "/books/42",
   %EventSourcingDB.ObserveEventsOptions{
@@ -301,7 +292,7 @@ To observe starting from the latest event of a given type, provide the `from_lat
 Possible options are `:wait_for_event`, which waits for an event of the given type to happen, or `:read_everything`, which effectively behaves as if `from_latest_event` was not specified:
 
 ```elixir
-result = EventSourcingDB.observe_events(
+EventSourcingDB.observe_events(
   client,
   "/books/42",
   %EventSourcingDB.ObserveEventsOptions{
@@ -328,65 +319,96 @@ EventSourcingDB.register_event_schema(
   %{
     "type" => "object",
     "properties" => %{
-      "title" =>  %{ "type": "string" },
-      "author" => %{ "type": "string" },
-      "isbn" =>   %{ "type": "string" },
+      "title" => %{"type" => "string"},
+      "author" => %{"type" => "string"},
+      "isbn" => %{"type" => "string"}
     },
     "required" => [
       "title",
       "author",
-      "isbn",
+      "isbn"
     ],
-    "additionalProperties" => false,
-  }),
+    "additionalProperties" => false
+  }
 )
 ```
 
 ## Reading Subjects
 
-To list all subjects, call the `list_subjects` function with `/` as the base subject. The function returns a stream from which you can retrieve one subject at a time:
+To list all subjects, call the `read_subjects` function with `/` as the base subject. The function returns a stream from which you can retrieve one subject at a time:
 
 ```elixir
-result = EventSourcingDB.read_subjects(client, "/")
-
-case result do
+case EventSourcingDB.read_subjects(client, "/") do
   {:ok, subjects} -> Enum.to_list(subjects)
-  {:error, type, reason} -> # handle error here
+  {:error, reason} -> # ...
 end
 ```
 
 If you only want to list subjects within a specific branch, provide the desired base subject instead:
 
 ```elixir
-result = EventSourcingDB.read_subjects(client, "/books")
+EventSourcingDB.read_subjects(client, "/books")
+```
+
+## Reading Event Types
+
+To list all event types, call the `read_event_types` function. The function returns a stream from which you can retrieve one event type at a time:
+
+```elixir
+case EventSourcingDB.read_event_types(client) do
+  {:ok, event_types} -> Enum.to_list(event_types)
+  {:error, reason} -> # ...
+end
 ```
 
 ## Reading a Specific Event Type
 
-To list a specific event type, call the `read_event_type` function. The function returns the detailed event type, which includes the schema:
+To read a specific event type, call the `read_event_type` function with the event type as an argument. The function returns the detailed event type, which includes the schema:
 
 ```elixir
-result = EventSourcingDB.read_event_types(client, "io.eventsourcingdb.library.book-acquired")
-
-case result do
-  {:ok, event_types} -> Enum.to_list(event_types)
-  {:error, error_type, reason} -> # ...
+case EventSourcingDB.read_event_type(client, "io.eventsourcingdb.library.book-acquired") do
+  {:ok, event_type} -> # ...
+  {:error, reason} -> # ...
 end
 ```
 
 ## Verifying an Event's Hash
 
-TODO
+To verify the integrity of an event, call the `Event.verify_hash` function on the event. This recomputes the event's hash locally and compares it to the hash stored in the event. If the hashes differ, the function returns an error:
+
+```elixir
+alias EventSourcingDB.Event
+
+case Event.verify_hash(event) do
+  :ok -> # hash is valid
+  {:error, reason} -> # ...
+end
+```
+
+*Note that this only verifies the hash. If you also want to verify the signature, you can skip this step and call `verify_signature` directly, which performs a hash verification internally.*
 
 ## Verifying an Event's Signature
 
-TODO
+To verify the authenticity of an event, call the `Event.verify_signature` function on the event. This requires the public key that matches the private key used for signing on the server.
+
+The function first verifies the event's hash, and then checks the signature. If any verification step fails, it returns an error:
+
+```elixir
+alias EventSourcingDB.Event
+
+verification_key = # public key as Ed25519 binary
+
+case Event.verify_signature(event, verification_key) do
+  :ok -> # signature is valid
+  {:error, reason} -> # ...
+end
+```
 
 ## Using Testcontainers
 
 Follow the instructions to [setup test containers for elixir](https://github.com/testcontainers/testcontainers-elixir).
 
-Then you are ready to use the provideded `TestContainer` in your tests:
+Then you are ready to use the provided `TestContainer` in your tests:
 
 ```elixir
 defmodule YourTest do
@@ -395,12 +417,10 @@ defmodule YourTest do
 
   import Testcontainers.ExUnit
 
-  container(:esdb, TestContainer.new(())
+  container(:esdb, TestContainer.new())
 
   test "ping", %{esdb: esdb} do
     client = TestContainer.get_client(esdb)
-
-    # do sth with client
 
     assert EventSourcingDB.ping(client) == :ok
   end
@@ -409,7 +429,7 @@ end
 
 ### Configuring the Container Instance
 
-By default, `TestContainer` uses the `latest` tag of the official EventSourcingDB Docker image. To change that use the provided builder and call the `with_image_tag` function.
+By default, `TestContainer` uses the `latest` tag of the official EventSourcingDB Docker image. To change that, call the `with_image_tag` function:
 
 ```elixir
 container(
@@ -429,3 +449,29 @@ container(
   |> TestContainer.with_api_token("secret")
 )
 ```
+
+If you want to sign events, call the `with_signing_key` function. This generates a new signing and verification key pair inside the container:
+
+```elixir
+container(
+  :esdb,
+  TestContainer.new()
+  |> TestContainer.with_signing_key()
+)
+```
+
+You can retrieve the public key (for verifying signatures) once the container has been started:
+
+```elixir
+verification_key = TestContainer.get_verification_key(esdb)
+```
+
+The `verification_key` can be passed to `Event.verify_signature` when verifying events read from the database.
+
+### Configuring the Client Manually
+
+In case you need to set up the client yourself, use the following functions to get details on the container:
+
+- `TestContainer.get_base_url(esdb)` returns the full URL of the container
+- `TestContainer.get_mapped_port(esdb)` returns the mapped port
+- `TestContainer.get_api_token(esdb)` returns the API token
