@@ -60,14 +60,10 @@ defmodule EventSourcingDBTest.ObserveEvents do
     client = TestContainer.get_client(esdb)
 
     first_event =
-      create_test_eventcandidate("/test", %{"value" => 23},
-        type: "io.eventsourcingdb.test.foo"
-      )
+      create_test_eventcandidate("/test", %{"value" => 23}, type: "io.eventsourcingdb.test.foo")
 
     second_event =
-      create_test_eventcandidate("/test", %{"value" => 42},
-        type: "io.eventsourcingdb.test.bar"
-      )
+      create_test_eventcandidate("/test", %{"value" => 42}, type: "io.eventsourcingdb.test.bar")
 
     EventSourcingDB.write_events!(client, [first_event, second_event])
 
