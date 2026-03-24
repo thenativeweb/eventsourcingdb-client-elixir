@@ -1,6 +1,6 @@
 defmodule EventSourcingDBTest.WriteEvents do
   alias EventSourcingDB.Errors.ApiError
-  alias EventSourcingDB.IsEventQLTrue
+  alias EventSourcingDB.IsEventQLQueryTrue
   alias EventSourcingDB.IsSubjectOnEventId
   alias EventSourcingDB.IsSubjectPopulated
   alias EventSourcingDB.IsSubjectPristine
@@ -247,7 +247,7 @@ defmodule EventSourcingDBTest.WriteEvents do
 
     written =
       EventSourcingDB.write_events(client, event_candidates, [
-        %IsEventQLTrue{query: "FROM e IN events PROJECT INTO COUNT() == 0"}
+        %IsEventQLQueryTrue{query: "FROM e IN events PROJECT INTO COUNT() == 0"}
       ])
 
     assert match?({:ok, _}, written)

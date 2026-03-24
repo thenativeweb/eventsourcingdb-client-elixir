@@ -4,7 +4,7 @@ defmodule EventSourcingDB.TestContainer do
 
   Follow the instructions to [setup test containers for elixir](https://github.com/testcontainers/testcontainers-elixir).
 
-  Then you are ready to use the provideded `TestContainer` in your tests:
+  Then you are ready to use the provided `TestContainer` in your tests:
 
   ```elixir
   defmodule YourTest do
@@ -13,12 +13,10 @@ defmodule EventSourcingDB.TestContainer do
 
     import Testcontainers.ExUnit
 
-    container(:esdb, TestContainer.new(())
+    container(:esdb, TestContainer.new())
 
     test "ping", %{esdb: esdb} do
       client = TestContainer.get_client(esdb)
-
-      # do sth with client
 
       assert EventSourcingDB.ping(client) == :ok
     end
@@ -27,7 +25,7 @@ defmodule EventSourcingDB.TestContainer do
 
   ### Configuring the Container Instance
 
-  By default, `TestContainer` uses the `latest` tag of the official EventSourcingDB Docker image. To change that use the provided builder and call the `with_image_tag` function.
+  By default, `TestContainer` uses the `latest` tag of the official EventSourcingDB Docker image. To change that, call the `with_image_tag` function:
 
   ```elixir
   container(
@@ -48,6 +46,32 @@ defmodule EventSourcingDB.TestContainer do
   )
   ```
 
+  If you want to sign events, call the `with_signing_key` function. This generates a new signing and verification key pair inside the container:
+
+  ```elixir
+  container(
+    :esdb,
+    TestContainer.new()
+    |> TestContainer.with_signing_key()
+  )
+  ```
+
+  You can retrieve the public key (for verifying signatures) once the container has been started:
+
+  ```elixir
+  verification_key = TestContainer.get_verification_key(esdb)
+  ```
+
+  The `verification_key` can be passed to `Event.verify_signature` when verifying events read from the database.
+
+  ### Configuring the Client Manually
+
+  In case you need to set up the client yourself, use the following functions to get details on the container:
+
+  - `TestContainer.get_base_url(esdb)` returns the full URL of the container
+  - `TestContainer.get_mapped_port(esdb)` returns the mapped port
+  - `TestContainer.get_api_token(esdb)` returns the API token
+
   """
 
   alias EventSourcingDB.Client
@@ -63,8 +87,6 @@ defmodule EventSourcingDB.TestContainer do
             port: @default_port,
             signing_key: nil
 
-  # :port,
-  # reuse: false
   @doc """
   Creates a new Testcontainer with default settings - ready for immediate use
   """
@@ -120,9 +142,16 @@ defmodule EventSourcingDB.TestContainer do
     %{config | api_token: api_token}
   end
 
+  @doc """
+  Enables event signing for the testcontainer by generating an Ed25519 key pair.
+
+  The signing key is used by the server to sign events. The corresponding
+  verification key can be retrieved via `get_verification_key/1` after the
+  container has started.
+  """
   def with_signing_key(%__MODULE__{} = config) do
-    {_, signing_key} = :crypto.generate_key(:ed25519, [])
-    %{config | signing_key: signing_key}
+    {public_key, private_key} = :crypto.generate_key(:eddsa, :ed25519)
+    %{config | signing_key: {public_key, private_key}}
   end
 
   @doc """
@@ -162,7 +191,16 @@ defmodule EventSourcingDB.TestContainer do
   """
   def get_api_token(%Container{} = container), do: container.environment[:ESDB_API_TOKEN]
 
-  def get_signing_key(%Container{} = container), do: container.environment[:ESDB_SIGNING_KEY]
+  @doc """
+  Returns the Ed25519 public key for verifying event signatures.
+
+  This key can be passed to `EventSourcingDB.Event.verify_signature/2`.
+  Only available when the container was created with `with_signing_key/1`.
+  """
+  def get_verification_key(%Container{} = container) do
+    container.environment[:ESDB_VERIFICATION_KEY]
+    |> Base.decode16!(case: :lower)
+  end
 
   @doc """
   Gets the EventSourcingDB client for the given container
@@ -184,7 +222,6 @@ defmodule EventSourcingDB.TestContainer do
   end
 
   defimpl ContainerBuilder do
-    alias EventSourcingDB.Client
     alias Testcontainers.HttpWaitStrategy
 
     import Container
@@ -192,35 +229,58 @@ defmodule EventSourcingDB.TestContainer do
     @image_name "thenativeweb/eventsourcingdb"
 
     @impl true
-    def build(builder) do
+    def build(config) do
+      cmd = [
+        "run",
+        "--api-token",
+        config.api_token,
+        "--data-directory-temporary",
+        "--http-enabled",
+        "--https-enabled=false"
+      ]
+
       container =
-        new("#{@image_name}:#{builder.image_tag}")
-        |> with_exposed_port(builder.port)
-        |> with_environment(:ESDB_PORT, Integer.to_string(builder.port))
-        |> with_environment(:ESDB_API_TOKEN, builder.api_token)
+        new("#{@image_name}:#{config.image_tag}")
+        |> with_exposed_port(config.port)
+        |> with_environment(:ESDB_PORT, Integer.to_string(config.port))
+        |> with_environment(:ESDB_API_TOKEN, config.api_token)
         |> with_waiting_strategy(
-          HttpWaitStrategy.new("/api/v1/ping", builder.port,
+          HttpWaitStrategy.new("/api/v1/ping", config.port,
             timeout: 10_000,
             status_code: 200
           )
         )
-        |> with_cmd([
-          "run",
-          "--api-token",
-          builder.api_token,
-          "--data-directory-temporary",
-          "--http-enabled",
-          "--https-enabled=false"
-        ])
 
-      case builder.signing_key do
-        true ->
-          container
-          |> with_environment(:ESDB_SIGNING_KEY, builder.signing_key)
+      {container, cmd} =
+        if config.signing_key do
+          {public_key, private_key} = config.signing_key
 
-        _ ->
-          container
-      end
+          jwk =
+            JOSE.JWK.from_map(%{
+              "kty" => "OKP",
+              "crv" => "Ed25519",
+              "d" => Base.url_encode64(private_key, padding: false),
+              "x" => Base.url_encode64(public_key, padding: false)
+            })
+
+          {_type, pem} = JOSE.JWK.to_pem(jwk)
+
+          container =
+            container
+            |> with_copy_to("/tmp/signing-key.pem", pem)
+            |> with_environment(
+              :ESDB_VERIFICATION_KEY,
+              Base.encode16(public_key, case: :lower)
+            )
+
+          cmd = cmd ++ ["--signing-key-file=/tmp/signing-key.pem"]
+
+          {container, cmd}
+        else
+          {container, cmd}
+        end
+
+      container |> with_cmd(cmd)
     end
 
     @impl true
