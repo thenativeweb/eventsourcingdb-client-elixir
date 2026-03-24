@@ -53,6 +53,7 @@ jobs:
         if: ${{ steps.get_next_version.outputs.hasNextVersion == 'true' }}
         run: |
           sed -i 's/@version ".*"/@version "${{ steps.get_next_version.outputs.version }}"/' mix.exs
+          sed -i 's/{:eventsourcingdb, "~> [^"]*"}/{:eventsourcingdb, "~> ${{ steps.get_next_version.outputs.version }}"}/' README.md
           git config --global user.email "hello@thenativeweb.io"
           git config --global user.name "${{ github.actor }}"
           git add .
