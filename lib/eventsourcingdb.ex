@@ -609,7 +609,7 @@ defmodule EventSourcingDB do
             {[message], response}
 
           {:error, reason} ->
-            {:error, reason}
+            raise(reason)
 
           # handle heartbeat case
           nil ->
@@ -617,7 +617,7 @@ defmodule EventSourcingDB do
         end
 
       {:error, reason} ->
-        {:error, reason}
+        raise(reason)
 
       # This is returned when the stream is done.
       {:ok, [:done]} ->
