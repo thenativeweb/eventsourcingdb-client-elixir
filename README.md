@@ -223,6 +223,18 @@ EventSourcingDB.read_events(
 
 *Note that `from_latest_event` and `lower_bound` can not be provided at the same time.*
 
+### Aborting Reading
+
+Since `read_events` returns a lazy stream, you can stop consuming it at any time. Use `Enum.take/2` to limit the number of events, or simply stop iterating:
+
+```elixir
+# Take only the first 10 events
+{:ok, events} = EventSourcingDB.read_events(client, "/books/42")
+first_ten = Enum.take(events, 10)
+```
+
+If you are consuming the stream in a separate process, you can abort by terminating that process.
+
 ## Running EventQL Queries
 
 To run an EventQL query, call the `run_eventql_query` function and provide the query as argument. The function returns a stream:
@@ -235,6 +247,15 @@ end
 ```
 
 *Note that each row returned by the stream matches the projection specified in your query.*
+
+### Aborting a Query
+
+Since `run_eventql_query` returns a lazy stream, you can stop consuming it at any time. Use `Enum.take/2` to limit the number of rows, or simply stop iterating:
+
+```elixir
+{:ok, rows} = EventSourcingDB.run_eventql_query(client, "FROM e IN events PROJECT INTO e")
+first_five = Enum.take(rows, 5)
+```
 
 ## Observing Events
 
@@ -308,6 +329,17 @@ EventSourcingDB.observe_events(
 
 *Note that `from_latest_event` and `lower_bound` can not be provided at the same time.*
 
+### Aborting Observing
+
+Since `observe_events` returns a lazy stream, you can stop consuming it at any time. Use `Enum.take/2` to limit the number of events, or simply stop iterating:
+
+```elixir
+{:ok, events} = EventSourcingDB.observe_events(client, "/books/42")
+first_event = Enum.take(events, 1)
+```
+
+If you are consuming the stream in a separate process, you can abort by terminating that process.
+
 ## Registering an Event Schema
 
 To register an event schema, call the `register_event_schema` function and hand over an event type and the desired schema:
@@ -350,6 +382,10 @@ If you only want to list subjects within a specific branch, provide the desired 
 EventSourcingDB.read_subjects(client, "/books")
 ```
 
+### Aborting Listing
+
+Since `read_subjects` returns a lazy stream, you can stop consuming it at any time by simply stopping iteration or using `Enum.take/2`.
+
 ## Reading Event Types
 
 To list all event types, call the `read_event_types` function. The function returns a stream from which you can retrieve one event type at a time:
@@ -360,6 +396,10 @@ case EventSourcingDB.read_event_types(client) do
   {:error, reason} -> # ...
 end
 ```
+
+### Aborting Listing
+
+Since `read_event_types` returns a lazy stream, you can stop consuming it at any time by simply stopping iteration or using `Enum.take/2`.
 
 ## Reading a Specific Event Type
 

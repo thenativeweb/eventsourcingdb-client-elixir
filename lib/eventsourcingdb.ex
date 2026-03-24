@@ -303,6 +303,10 @@ defmodule EventSourcingDB do
 
   *Note that `from_latest_event` and `lower_bound` can not be provided at the same time.*
 
+  ### Aborting Reading
+
+  Since `read_events` returns a lazy stream, you can stop consuming it at any time. Use `Enum.take/2` to limit the number of events, or simply stop iterating. If you are consuming the stream in a separate process, you can abort by terminating that process.
+
   """
   @spec read_events(Client.t(), String.t(), ReadEventsOptions.t() | nil) ::
           stream_response(Event.t())
@@ -389,6 +393,10 @@ defmodule EventSourcingDB do
 
   *Note that `from_latest_event` and `lower_bound` can not be provided at the same time.*
 
+  ### Aborting Observing
+
+  Since `observe_events` returns a lazy stream, you can stop consuming it at any time. Use `Enum.take/2` to limit the number of events, or simply stop iterating. If you are consuming the stream in a separate process, you can abort by terminating that process.
+
   """
   @spec observe_events(Client.t(), String.t(), ObserveEventsOptions.t() | nil) ::
           stream_response(Event.t())
@@ -415,6 +423,10 @@ defmodule EventSourcingDB do
   ```
 
   *Note that each row returned by the stream matches the projection specified in your query.*
+
+  ### Aborting a Query
+
+  Since `run_eventql_query` returns a lazy stream, you can stop consuming it at any time. Use `Enum.take/2` to limit the number of rows, or simply stop iterating.
 
   """
   @spec run_eventql_query(Client.t(), String.t()) :: stream_response(any())
@@ -479,6 +491,11 @@ defmodule EventSourcingDB do
   ```elixir
   EventSourcingDB.read_subjects(client, "/books")
   ```
+
+  ### Aborting Listing
+
+  Since `read_subjects` returns a lazy stream, you can stop consuming it at any time by simply stopping iteration or using `Enum.take/2`.
+
   """
   @spec read_subjects(Client.t(), String.t()) :: stream_response(String.t())
   def read_subjects(client, base_subject) do
@@ -523,6 +540,11 @@ defmodule EventSourcingDB do
     {:error, reason} -> # ...
   end
   ```
+
+  ### Aborting Listing
+
+  Since `read_event_types` returns a lazy stream, you can stop consuming it at any time by simply stopping iteration or using `Enum.take/2`.
+
   """
   @spec read_event_types(Client.t()) :: stream_response(EventType.t())
   def read_event_types(client) do
