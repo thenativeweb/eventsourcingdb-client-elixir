@@ -200,13 +200,13 @@ defmodule EventSourcingDB do
 
   """
   @spec write_events(Client.t(), nonempty_list(EventCandidate.t()), [precondition()]) ::
-          response(Event.t())
+          response([Event.t()])
   def write_events(client, events, preconditions \\ []) when is_list(events) do
     request_one_shot(client, WriteEvents.new(events, preconditions))
   end
 
   @spec write_events!(Client.t(), nonempty_list(EventCandidate.t()), [precondition()]) ::
-          response!(Event.t())
+          response!([Event.t()])
   def write_events!(client, events, preconditions \\ []) when is_list(events) do
     request_one_shot!(client, WriteEvents.new(events, preconditions))
   end
