@@ -13,7 +13,7 @@ defmodule EventSourcingDB.TestContainer do
 
     import Testcontainers.ExUnit
 
-    container(:esdb, TestContainer.new(())
+    container(:esdb, TestContainer.new())
 
     test "ping", %{esdb: esdb} do
       client = TestContainer.get_client(esdb)
@@ -118,6 +118,13 @@ defmodule EventSourcingDB.TestContainer do
     %{config | api_token: api_token}
   end
 
+  @doc """
+  Enables event signing for the testcontainer by generating an Ed25519 key pair.
+
+  The signing key is used by the server to sign events. The corresponding
+  verification key can be retrieved via `get_verification_key/1` after the
+  container has started.
+  """
   def with_signing_key(%__MODULE__{} = config) do
     {public_key, private_key} = :crypto.generate_key(:eddsa, :ed25519)
     %{config | signing_key: {public_key, private_key}}
@@ -160,6 +167,12 @@ defmodule EventSourcingDB.TestContainer do
   """
   def get_api_token(%Container{} = container), do: container.environment[:ESDB_API_TOKEN]
 
+  @doc """
+  Returns the Ed25519 public key for verifying event signatures.
+
+  This key can be passed to `EventSourcingDB.Event.verify_signature/2`.
+  Only available when the container was created with `with_signing_key/1`.
+  """
   def get_verification_key(%Container{} = container) do
     container.environment[:ESDB_VERIFICATION_KEY]
     |> Base.decode16!(case: :lower)

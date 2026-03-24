@@ -8,7 +8,7 @@ defmodule EventSourcingDB.MixProject do
 
   def project do
     [
-      app: :EventSourcingDB,
+      app: :eventsourcingdb,
       version: @version,
       elixir: "~> 1.19",
       package: package(),
@@ -63,7 +63,7 @@ defmodule EventSourcingDB.MixProject do
           EventSourcingDB.ManagementEvent
         ],
         Preconditions: [
-          EventSourcingDB.IsEventQLTrue,
+          EventSourcingDB.IsEventQLQueryTrue,
           EventSourcingDB.IsSubjectOnEventId,
           EventSourcingDB.IsSubjectPopulated,
           EventSourcingDB.IsSubjectPristine

@@ -17,7 +17,7 @@ defmodule EventSourcingDB do
     IsSubjectPristine,
     IsSubjectPopulated,
     IsSubjectOnEventId,
-    IsEventQLTrue
+    IsEventQLQueryTrue
   }
 
   alias EventSourcingDB.Errors.{
@@ -71,7 +71,7 @@ defmodule EventSourcingDB do
   @type stream_response!(t) :: Enumerable.t(t)
 
   @type precondition() ::
-          IsEventQLTrue.t()
+          IsEventQLQueryTrue.t()
           | IsSubjectOnEventId.t()
           | IsSubjectPopulated.t()
           | IsSubjectPristine.t()
