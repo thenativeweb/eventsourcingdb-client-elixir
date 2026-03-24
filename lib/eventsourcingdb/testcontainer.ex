@@ -4,7 +4,7 @@ defmodule EventSourcingDB.TestContainer do
 
   Follow the instructions to [setup test containers for elixir](https://github.com/testcontainers/testcontainers-elixir).
 
-  Then you are ready to use the provideded `TestContainer` in your tests:
+  Then you are ready to use the provided `TestContainer` in your tests:
 
   ```elixir
   defmodule YourTest do
@@ -18,8 +18,6 @@ defmodule EventSourcingDB.TestContainer do
     test "ping", %{esdb: esdb} do
       client = TestContainer.get_client(esdb)
 
-      # do sth with client
-
       assert EventSourcingDB.ping(client) == :ok
     end
   end
@@ -27,7 +25,7 @@ defmodule EventSourcingDB.TestContainer do
 
   ### Configuring the Container Instance
 
-  By default, `TestContainer` uses the `latest` tag of the official EventSourcingDB Docker image. To change that use the provided builder and call the `with_image_tag` function.
+  By default, `TestContainer` uses the `latest` tag of the official EventSourcingDB Docker image. To change that, call the `with_image_tag` function:
 
   ```elixir
   container(
@@ -47,6 +45,32 @@ defmodule EventSourcingDB.TestContainer do
     |> TestContainer.with_api_token("secret")
   )
   ```
+
+  If you want to sign events, call the `with_signing_key` function. This generates a new signing and verification key pair inside the container:
+
+  ```elixir
+  container(
+    :esdb,
+    TestContainer.new()
+    |> TestContainer.with_signing_key()
+  )
+  ```
+
+  You can retrieve the public key (for verifying signatures) once the container has been started:
+
+  ```elixir
+  verification_key = TestContainer.get_verification_key(esdb)
+  ```
+
+  The `verification_key` can be passed to `Event.verify_signature` when verifying events read from the database.
+
+  ### Configuring the Client Manually
+
+  In case you need to set up the client yourself, use the following functions to get details on the container:
+
+  - `TestContainer.get_base_url(esdb)` returns the full URL of the container
+  - `TestContainer.get_mapped_port(esdb)` returns the mapped port
+  - `TestContainer.get_api_token(esdb)` returns the API token
 
   """
 
