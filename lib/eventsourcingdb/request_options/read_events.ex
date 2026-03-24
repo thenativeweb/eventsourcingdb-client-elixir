@@ -7,7 +7,7 @@ defmodule EventSourcingDB.ReadEventsOptions do
   typedstruct do
     field :recursive, boolean(), default: false
     field :order, :chronological | :antichronological
-    field :from_latest_event, EventSourcingDB.FromLatestEventOptions.t()
+    field :from_latest_event, EventSourcingDB.ReadFromLatestEventOptions.t()
     field :lower_bound, EventSourcingDB.BoundOptions.t()
     field :upper_bound, EventSourcingDB.BoundOptions.t()
   end

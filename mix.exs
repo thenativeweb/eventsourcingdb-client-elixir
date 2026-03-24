@@ -70,7 +70,8 @@ defmodule EventSourcingDB.MixProject do
         ],
         "Request Options": [
           EventSourcingDB.BoundOptions,
-          EventSourcingDB.FromLatestEventOptions,
+          EventSourcingDB.ObserveFromLatestEventOptions,
+          EventSourcingDB.ReadFromLatestEventOptions,
           EventSourcingDB.ObserveEventsOptions,
           EventSourcingDB.ReadEventsOptions
         ],

@@ -292,7 +292,7 @@ defmodule EventSourcingDB do
     "/books/42",
     %EventSourcingDB.ReadEventsOptions{
       recursive: false,
-      from_latest_event: %EventSourcingDB.FromLatestEventOptions{
+      from_latest_event: %EventSourcingDB.ReadFromLatestEventOptions{
         subject: "/books/42",
         type: "io.eventsourcingdb.library.book-borrowed",
         if_event_is_missing: :read_everything
@@ -378,7 +378,7 @@ defmodule EventSourcingDB do
     "/books/42",
     %EventSourcingDB.ObserveEventsOptions{
       recursive: false,
-      from_latest_event: %EventSourcingDB.FromLatestEventOptions{
+      from_latest_event: %EventSourcingDB.ObserveFromLatestEventOptions{
         subject: "/books/42",
         type: "io.eventsourcingdb.library.book-borrowed",
         if_event_is_missing: :read_everything
