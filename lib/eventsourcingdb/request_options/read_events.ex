@@ -5,7 +5,7 @@ defmodule EventSourcingDB.ReadEventsOptions do
   use TypedStruct
 
   typedstruct do
-    field :recursive, boolean(), enforce: true
+    field :recursive, boolean(), default: false
     field :order, :chronological | :antichronological
     field :from_latest_event, EventSourcingDB.FromLatestEventOptions.t()
     field :lower_bound, EventSourcingDB.BoundOptions.t()
