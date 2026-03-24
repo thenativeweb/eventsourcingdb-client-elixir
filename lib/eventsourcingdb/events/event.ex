@@ -15,15 +15,21 @@ defmodule EventSourcingDB.Event do
 
   @signature_prefix "esdb:signature:v1:"
 
+  @key_mapping %{
+    "predecessorhash" => :predecessor_hash,
+    "datacontenttype" => :data_content_type,
+    "specversion" => :spec_version
+  }
+
   typedstruct do
     field :data, any(), enforce: true
-    field :datacontenttype, String.t(), enforce: true
+    field :data_content_type, String.t(), enforce: true
     field :hash, String.t(), enforce: true
     field :id, String.t(), enforce: true
-    field :predecessorhash, String.t(), enforce: true
+    field :predecessor_hash, String.t(), enforce: true
     field :signature, String.t()
     field :source, String.t(), enforce: true
-    field :specversion, String.t(), enforce: true
+    field :spec_version, String.t(), enforce: true
     field :subject, String.t(), enforce: true
     field :time, String.t(), enforce: true
     field :traceparent, String.t()
@@ -33,7 +39,14 @@ defmodule EventSourcingDB.Event do
 
   @spec new(map()) :: Event.t()
   def new(value \\ %{}) do
-    struct!(__MODULE__, value |> Map.new(fn {k, v} -> {String.to_existing_atom(k), v} end))
+    struct!(
+      __MODULE__,
+      value
+      |> Map.new(fn {k, v} ->
+        key = Map.get(@key_mapping, k, String.to_existing_atom(k))
+        {key, v}
+      end)
+    )
   end
 
   @doc """
@@ -55,7 +68,7 @@ defmodule EventSourcingDB.Event do
   @spec verify_hash(Event.t()) :: :ok | {:error, HashVerificationFailed.t()}
   def verify_hash(event) do
     metadata =
-      "#{event.specversion}|#{event.id}|#{event.predecessorhash}|#{event.time}|#{event.source}|#{event.subject}|#{event.type}|#{event.datacontenttype}"
+      "#{event.spec_version}|#{event.id}|#{event.predecessor_hash}|#{event.time}|#{event.source}|#{event.subject}|#{event.type}|#{event.data_content_type}"
 
     metadata_hash = :crypto.hash(:sha256, metadata) |> Base.encode16(case: :lower)
     data_hash = :crypto.hash(:sha256, Jason.encode!(event.data)) |> Base.encode16(case: :lower)

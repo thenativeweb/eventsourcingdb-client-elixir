@@ -5,12 +5,17 @@ defmodule EventSourcingDB.ManagementEvent do
   alias EventSourcingDB.ManagementEvent
   use TypedStruct
 
+  @key_mapping %{
+    "datacontenttype" => :data_content_type,
+    "specversion" => :spec_version
+  }
+
   typedstruct enforce: true do
     field :data, any()
-    field :datacontenttype, String.t()
+    field :data_content_type, String.t()
     field :id, String.t()
     field :source, String.t()
-    field :specversion, String.t()
+    field :spec_version, String.t()
     field :subject, String.t()
     field :time, String.t()
     field :type, String.t()
@@ -18,6 +23,13 @@ defmodule EventSourcingDB.ManagementEvent do
 
   @spec new(map()) :: ManagementEvent.t()
   def new(value \\ %{}) do
-    struct!(__MODULE__, value |> Map.new(fn {k, v} -> {String.to_existing_atom(k), v} end))
+    struct!(
+      __MODULE__,
+      value
+      |> Map.new(fn {k, v} ->
+        key = Map.get(@key_mapping, k, String.to_existing_atom(k))
+        {key, v}
+      end)
+    )
   end
 end

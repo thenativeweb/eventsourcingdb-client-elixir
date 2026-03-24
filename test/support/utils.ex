@@ -40,7 +40,7 @@ defmodule EventSourcingDBTest.Utils do
     assert_event_match_eventcandidate(event, candidate)
 
     assert event.id == Integer.to_string(expected_id), "ID should match"
-    assert event.predecessorhash == previous_event_hash, "Previous hash should match"
+    assert event.predecessor_hash == previous_event_hash, "Previous hash should match"
   end
 
   @spec assert_event_match_eventcandidate(Event.t(), EventCandidate.t()) :: any()
@@ -52,13 +52,13 @@ defmodule EventSourcingDBTest.Utils do
     assert event.type == candidate.type, "Type mismatch"
 
     # check metadata
-    assert event.datacontenttype == "application/json",
+    assert event.data_content_type == "application/json",
            "Data content type should be application/json"
 
     assert String.length(event.hash) == 64, "Hash should be present"
     assert not is_nil(event.id), "ID should be present"
-    assert not is_nil(event.predecessorhash), "Previous hash should be present"
-    assert event.specversion == "1.0", "Spec version should be 1.0"
+    assert not is_nil(event.predecessor_hash), "Previous hash should be present"
+    assert event.spec_version == "1.0", "Spec version should be 1.0"
   end
 
   @spec assert_event_match_eventcandidates([Event.t()], [EventCandidate.t()]) :: any()
