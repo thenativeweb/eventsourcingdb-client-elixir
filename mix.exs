@@ -70,9 +70,10 @@ defmodule EventSourcingDB.MixProject do
         ],
         "Request Options": [
           EventSourcingDB.BoundOptions,
-          EventSourcingDB.FromLatestEventOptions,
           EventSourcingDB.ObserveEventsOptions,
-          EventSourcingDB.ReadEventsOptions
+          EventSourcingDB.ObserveFromLatestEventOptions,
+          EventSourcingDB.ReadEventsOptions,
+          EventSourcingDB.ReadFromLatestEventOptions
         ],
         Testing: [
           EventSourcingDB.TestContainer
