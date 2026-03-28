@@ -2,7 +2,7 @@ defmodule EventSourcingDBTest.ObserveEvents do
   alias EventSourcingDB.TestContainer
   alias EventSourcingDB.ObserveEventsOptions
   alias EventSourcingDB.BoundOptions
-  alias EventSourcingDB.FromLatestEventOptions
+  alias EventSourcingDB.ObserveFromLatestEventOptions
   import EventSourcingDBTest.Utils
   use ExUnit.Case, async: true
 
@@ -70,7 +70,7 @@ defmodule EventSourcingDBTest.ObserveEvents do
     events =
       EventSourcingDB.observe_events!(client, "/", %ObserveEventsOptions{
         recursive: true,
-        from_latest_event: %FromLatestEventOptions{
+        from_latest_event: %ObserveFromLatestEventOptions{
           subject: "/test",
           type: "io.eventsourcingdb.test.bar",
           if_event_is_missing: :read_everything

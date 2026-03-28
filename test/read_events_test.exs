@@ -1,7 +1,7 @@
 defmodule EventSourcingDBTest.ReadEvents do
   alias EventSourcingDB.Errors.TransmissionError
   alias EventSourcingDB.Client
-  alias EventSourcingDB.FromLatestEventOptions
+  alias EventSourcingDB.ReadFromLatestEventOptions
   alias EventSourcingDB.BoundOptions
   alias EventSourcingDB.ReadEventsOptions
   alias EventSourcingDB.TestContainer
@@ -181,7 +181,7 @@ defmodule EventSourcingDBTest.ReadEvents do
 
     events =
       EventSourcingDB.read_events!(client, "/test", %ReadEventsOptions{
-        from_latest_event: %FromLatestEventOptions{
+        from_latest_event: %ReadFromLatestEventOptions{
           subject: "/",
           type: "io.eventsourcingdb.test.does-not-exist",
           if_event_is_missing: :read_nothing
@@ -204,7 +204,7 @@ defmodule EventSourcingDBTest.ReadEvents do
 
     events =
       EventSourcingDB.read_events!(client, "/test", %ReadEventsOptions{
-        from_latest_event: %FromLatestEventOptions{
+        from_latest_event: %ReadFromLatestEventOptions{
           subject: "/marker",
           type: "io.eventsourcingdb.test",
           if_event_is_missing: :read_nothing

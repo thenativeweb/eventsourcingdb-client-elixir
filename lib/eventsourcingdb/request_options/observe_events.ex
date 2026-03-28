@@ -6,7 +6,7 @@ defmodule EventSourcingDB.ObserveEventsOptions do
 
   typedstruct do
     field :recursive, boolean(), enforce: true
-    field :from_latest_event, EventSourcingDB.FromLatestEventOptions.t()
+    field :from_latest_event, EventSourcingDB.ObserveFromLatestEventOptions.t()
     field :lower_bound, EventSourcingDB.BoundOptions.t()
   end
 
