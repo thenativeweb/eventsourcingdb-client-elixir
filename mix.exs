@@ -85,7 +85,7 @@ defmodule EventSourcingDB.MixProject do
   # Run "mix help deps" to learn about dependencies.
   defp deps do
     [
-      {:req, "~> 0.5.16"},
+      {:req, "~> 0.6.1"},
       {:jason, "~> 1.2"},
       {:jose, "~> 1.11"},
       {:ex_json_schema, "~> 0.11.2"},
