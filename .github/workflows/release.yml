@@ -23,7 +23,7 @@ jobs:
       - name: Install inotify-tools
         run: sudo apt-get install -y inotify-tools
       - name: Use Elixir
-        uses: erlef/setup-beam@v1
+        uses: erlef/setup-beam@v1.24.0
         id: beam
         with:
           version-file: .tool-versions
