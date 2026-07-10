@@ -23,7 +23,7 @@ jobs:
       - name: Install inotify-tools
         run: sudo apt-get install -y inotify-tools
       - name: Use Elixir
-        uses: erlef/setup-beam@v1.24.0
+        uses: erlef/setup-beam@v1.24.1
         id: beam
         with:
           version-file: .tool-versions
@@ -48,7 +48,7 @@ jobs:
 
       - name: Get next version
         id: get_next_version
-        uses: thenativeweb/get-next-version@2.7.2
+        uses: thenativeweb/get-next-version@2.7.3
       - name: Create new version
         if: ${{ steps.get_next_version.outputs.hasNextVersion == 'true' }}
         run: |
