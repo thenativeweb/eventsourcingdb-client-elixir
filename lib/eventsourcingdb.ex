@@ -706,15 +706,16 @@ defmodule EventSourcingDB do
   @spec build_request(Client.t(), struct()) :: Req.Request.t()
   defp build_request(client, request) do
     request_module = get_request_module(request)
+    method = request_module.method()
 
     opts =
       [
         base_url: client.base_url,
         auth: {:bearer, client.api_token},
-        method: request_module.method(),
+        method: method,
         url: request_module.path()
       ]
-      |> Keyword.merge(build_body_opts(request))
+      |> Keyword.merge(build_body_opts(request, method))
       |> Keyword.merge(client.req_options)
 
     Req.new(opts)
@@ -728,7 +729,11 @@ defmodule EventSourcingDB do
     protocol.impl_for(mod) != nil
   end
 
-  defp build_body_opts(request_module) do
+  # GET requests must not carry a body, otherwise Req turns them into POST
+  # requests (see the encode_body step, introduced in Req 0.7).
+  defp build_body_opts(_request_module, :get), do: []
+
+  defp build_body_opts(request_module, _method) do
     if implements_protocol?(Jason.Encoder, request_module) do
       [
         headers: [{"Content-Type", "application/json"}],
