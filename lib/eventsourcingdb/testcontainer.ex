@@ -56,13 +56,14 @@ defmodule EventSourcingDB.TestContainer do
   )
   ```
 
-  You can retrieve the public key (for verifying signatures) once the container has been started:
+  You can retrieve the private key (for signing) and the public key (for verifying signatures) once the container has been started:
 
   ```elixir
+  signing_key = TestContainer.get_signing_key(esdb)
   verification_key = TestContainer.get_verification_key(esdb)
   ```
 
-  The `verification_key` can be passed to `Event.verify_signature` when verifying events read from the database.
+  The `signing_key` is the private key EventSourcingDB signs events with. The `verification_key` can be passed to `Event.verify_signature` when verifying events read from the database.
 
   ### Configuring the Client Manually
 
@@ -192,6 +193,18 @@ defmodule EventSourcingDB.TestContainer do
   def get_api_token(%Container{} = container), do: container.environment[:ESDB_API_TOKEN]
 
   @doc """
+  Returns the Ed25519 private key the server signs events with.
+
+  Only available when the container was created with `with_signing_key/1`.
+  """
+  def get_signing_key(%Container{} = container) do
+    case container.environment[:ESDB_SIGNING_KEY] do
+      nil -> raise ArgumentError, "the container was started without a signing key"
+      signing_key -> Base.decode16!(signing_key, case: :lower)
+    end
+  end
+
+  @doc """
   Returns the Ed25519 public key for verifying event signatures.
 
   This key can be passed to `EventSourcingDB.Event.verify_signature/2`.
@@ -271,6 +284,12 @@ defmodule EventSourcingDB.TestContainer do
             |> with_environment(
               :ESDB_VERIFICATION_KEY,
               Base.encode16(public_key, case: :lower)
+            )
+            # The signing key is in the container anyway, as the file the
+            # server reads it from, so it adds nothing to expose it here, too.
+            |> with_environment(
+              :ESDB_SIGNING_KEY,
+              Base.encode16(private_key, case: :lower)
             )
 
           cmd = cmd ++ ["--signing-key-file=/tmp/signing-key.pem"]

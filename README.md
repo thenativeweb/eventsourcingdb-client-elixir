@@ -460,13 +460,14 @@ container(
 )
 ```
 
-You can retrieve the public key (for verifying signatures) once the container has been started:
+You can retrieve the private key (for signing) and the public key (for verifying signatures) once the container has been started:
 
 ```elixir
+signing_key = TestContainer.get_signing_key(esdb)
 verification_key = TestContainer.get_verification_key(esdb)
 ```
 
-The `verification_key` can be passed to `Event.verify_signature` when verifying events read from the database.
+The `signing_key` is the private key EventSourcingDB signs events with. The `verification_key` can be passed to `Event.verify_signature` when verifying events read from the database.
 
 ### Configuring the Client Manually
 

@@ -31,6 +31,23 @@ defmodule EventSourcingDBTest.VerifyEventsSignature do
     assert :ok = Testcontainers.stop_container(esdb.container_id)
   end
 
+  test "get signing key returns the key the verification key belongs to", %{esdb: esdb} do
+    signing_key = TestContainer.get_signing_key(esdb)
+
+    assert {public_key, ^signing_key} = :crypto.generate_key(:eddsa, :ed25519, signing_key)
+    assert public_key == TestContainer.get_verification_key(esdb)
+  end
+
+  test "get signing key raises without a signing key" do
+    assert {:ok, esdb} = Testcontainers.start_container(TestContainer.new())
+
+    assert_raise ArgumentError, "the container was started without a signing key", fn ->
+      TestContainer.get_signing_key(esdb)
+    end
+
+    assert :ok = Testcontainers.stop_container(esdb.container_id)
+  end
+
   test "verify signature with broken event hash", %{esdb: esdb} do
     client = TestContainer.get_client(esdb)
     verification_key = TestContainer.get_verification_key(esdb)
