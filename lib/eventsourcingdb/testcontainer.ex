@@ -249,7 +249,9 @@ defmodule EventSourcingDB.TestContainer do
         config.api_token,
         "--data-directory-temporary",
         "--http-enabled",
-        "--https-enabled=false"
+        "--https-enabled=false",
+        "--http-port",
+        Integer.to_string(config.port)
       ]
 
       container =
