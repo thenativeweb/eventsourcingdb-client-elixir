@@ -236,6 +236,8 @@ end
 
 *Note that each row returned by the stream matches the projection specified in your query.*
 
+While there are no rows to deliver, EventSourcingDB sends a heartbeat every second. If neither a row nor a heartbeat arrives for 30 seconds, the stream closes the connection and raises an `EventSourcingDB.Errors.HeartbeatTimeout` error.
+
 ## Observing Events
 
 To observe all events of a subject, call the `observe_events` function with the subject.
@@ -248,6 +250,8 @@ case EventSourcingDB.observe_events(client, "/books/42") do
   {:error, reason} -> # ...
 end
 ```
+
+While there are no events to deliver, EventSourcingDB sends a heartbeat every second. If neither an event nor a heartbeat arrives for 30 seconds, the stream closes the connection and raises an `EventSourcingDB.Errors.HeartbeatTimeout` error.
 
 ### Observing From Subjects Recursively
 
