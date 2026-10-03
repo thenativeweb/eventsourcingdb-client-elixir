@@ -15,6 +15,9 @@ defmodule EventSourcingDB.Requests.ObserveEvents do
   path "/api/v1/observe-events"
   type "event"
 
+  # The server sends a heartbeat every second while there is nothing else to send.
+  def heartbeats?(), do: true
+
   # region request
   # parameters and serialization
 

@@ -13,6 +13,9 @@ defmodule EventSourcingDB.Requests.RunEventQL do
   path "/api/v1/run-eventql-query"
   type "row"
 
+  # The server sends a heartbeat every second while there is nothing else to send.
+  def heartbeats?(), do: true
+
   # region request
   # parameters and serialization
 

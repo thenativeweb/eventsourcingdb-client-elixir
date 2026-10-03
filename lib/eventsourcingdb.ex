@@ -23,6 +23,7 @@ defmodule EventSourcingDB do
   alias EventSourcingDB.Errors.{
     ApiError,
     DBError,
+    HeartbeatTimeout,
     InvalidServerHeader,
     InvalidResponseType,
     TransmissionError
@@ -330,6 +331,8 @@ defmodule EventSourcingDB do
   end
   ```
 
+  While there are no events to deliver, EventSourcingDB sends a heartbeat every second. If neither an event nor a heartbeat arrives for 30 seconds, the stream closes the connection and raises an `EventSourcingDB.Errors.HeartbeatTimeout` error.
+
   ### Observing From Subjects Recursively
 
   If you want to observe not only all the events of a subject, but also the events of all nested subjects, set the `recursive` option to `true`:
@@ -415,6 +418,8 @@ defmodule EventSourcingDB do
   ```
 
   *Note that each row returned by the stream matches the projection specified in your query.*
+
+  While there are no rows to deliver, EventSourcingDB sends a heartbeat every second. If neither a row nor a heartbeat arrives for 30 seconds, the stream closes the connection and raises an `EventSourcingDB.Errors.HeartbeatTimeout` error.
 
   """
   @spec run_eventql_query(Client.t(), String.t()) :: stream_response(any())
@@ -538,6 +543,11 @@ defmodule EventSourcingDB do
   # region Requests
   #
 
+  # Streams with heartbeats end with a HeartbeatTimeout error if neither a line
+  # nor a heartbeat arrives for this many milliseconds. The value is fixed, only
+  # the tests shorten it through the application environment.
+  @heartbeat_timeout 30_000
+
   @spec request_stream!(Client.t(), struct()) :: stream_response!(any())
   defp request_stream!(client, request) do
     result = request_stream(client, request)
@@ -577,7 +587,7 @@ defmodule EventSourcingDB do
     response =
       client
       |> build_request(request)
-      |> Req.request(into: :self)
+      |> Req.request(stream_options(request))
 
     # credo warns the last two statements to be redundant, but I can't figure
     # out why it says so (they aren't)
@@ -589,13 +599,20 @@ defmodule EventSourcingDB do
     end
   end
 
+  # The heartbeat timeout watches streams with heartbeats, so the socket must not
+  # time out before it does (Req defaults to 15 seconds). The socket's receive
+  # timeout still bounds the wait for the response headers.
+  defp stream_options(request) do
+    case heartbeat_timeout(request) do
+      :infinity -> [into: :self]
+      timeout -> [into: :self, receive_timeout: 2 * timeout]
+    end
+  end
+
+  # Every call waits for the next line with a new deadline, so every line,
+  # including a heartbeat, restarts the heartbeat timeout.
   defp handle_stream(response, request) do
-    case Req.parse_message(
-           response,
-           receive do
-             message -> message
-           end
-         ) do
+    case receive_message(response, heartbeat_deadline(request)) do
       {:ok, [data: chunk]} ->
         json = Jason.decode(chunk)
 
@@ -623,13 +640,47 @@ defmodule EventSourcingDB do
       {:ok, [:done]} ->
         {:halt, response}
 
-      # This is received inside Finch from a process that is not the socket.
-      # Ideally Req should be able to handle this and return a proper error or ignore it.
-      :unknown ->
-        {[], response}
+      # Raising ends the stream, which cancels the response and thereby closes
+      # the connection.
+      :heartbeat_timeout ->
+        raise(%HeartbeatTimeout{})
 
       _something_else ->
         {[], response}
+    end
+  end
+
+  # Waits for the next message of the response. Messages that do not belong to
+  # it are not a line, so they do not restart the heartbeat timeout.
+  defp receive_message(response, deadline) do
+    receive do
+      message ->
+        case Req.parse_message(response, message) do
+          # This is received inside Finch from a process that is not the socket.
+          # Ideally Req should be able to handle this and return a proper error or ignore it.
+          :unknown -> receive_message(response, deadline)
+          result -> result
+        end
+    after
+      remaining_time(deadline) -> :heartbeat_timeout
+    end
+  end
+
+  defp heartbeat_deadline(request) do
+    case heartbeat_timeout(request) do
+      :infinity -> :infinity
+      timeout -> System.monotonic_time(:millisecond) + timeout
+    end
+  end
+
+  defp remaining_time(:infinity), do: :infinity
+  defp remaining_time(deadline), do: max(deadline - System.monotonic_time(:millisecond), 0)
+
+  defp heartbeat_timeout(request) do
+    if get_request_module(request).heartbeats?() do
+      Application.get_env(:eventsourcingdb, :heartbeat_timeout, @heartbeat_timeout)
+    else
+      :infinity
     end
   end
 
