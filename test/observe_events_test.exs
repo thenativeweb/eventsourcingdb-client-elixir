@@ -34,6 +34,20 @@ defmodule EventSourcingDBTest.ObserveEvents do
     assert [event] == written
   end
 
+  test "observe large events", %{esdb: esdb} do
+    client = TestContainer.get_client(esdb)
+
+    event_candidates =
+      for i <- 1..3 do
+        create_test_eventcandidate("/test", %{"value" => i, "text" => large_text()})
+      end
+
+    written = EventSourcingDB.write_events!(client, event_candidates)
+    events = EventSourcingDB.observe_events!(client, "/test") |> Enum.take(3)
+
+    assert events == written
+  end
+
   test "observes with lower bound", %{esdb: esdb} do
     client = TestContainer.get_client(esdb)
 
@@ -80,5 +94,11 @@ defmodule EventSourcingDBTest.ObserveEvents do
 
     assert length(events) == 1
     assert Enum.at(events, 0).data["value"] == 42
+  end
+
+  # About 40 KB of text with multibyte characters, so that the line of an event
+  # arrives in several blocks, which may end within a character.
+  defp large_text() do
+    String.duplicate("Grüße – 1 € ", 2_250)
   end
 end

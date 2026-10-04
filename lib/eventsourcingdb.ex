@@ -582,14 +582,18 @@ defmodule EventSourcingDB do
       {:ok, response} ->
         line_timeout = line_timeout(req, request)
 
-        # Errors while the stream is read are raised, so the stream always
-        # hands the response to the cleanup, which closes the connection.
+        # The resource receives the lines of the response, and keeps the start
+        # of a line that has not arrived completely yet next to the response.
+        # Errors while the stream is read are raised, also while a line is
+        # handled, so the stream always hands the response to the cleanup,
+        # which closes the connection.
         stream =
           Stream.resource(
-            fn -> response end,
-            fn response -> handle_stream(response, request, line_timeout) end,
-            &close_stream/1
+            fn -> {response, ""} end,
+            fn state -> receive_lines(state, request, line_timeout) end,
+            fn {response, _rest} -> close_stream(response) end
           )
+          |> Stream.flat_map(&handle_line(&1, request))
 
         {:ok, stream}
 
@@ -627,46 +631,76 @@ defmodule EventSourcingDB do
     end
   end
 
-  # Every call waits for the next line with a new deadline, so every line,
-  # including a heartbeat, restarts the heartbeat timeout.
+  # Every call waits for the next lines with a new deadline, so every line,
+  # including a heartbeat, restarts the heartbeat timeout. The data of the
+  # response arrives in blocks, which need not match the lines: a block may
+  # hold several lines, and a long line may span several blocks. So the start
+  # of a line waits in the state until the rest of it arrives. It is not a line
+  # yet, so it does not restart the heartbeat timeout.
   #
   # Errors are raised rather than returned, because Stream.resource takes a
   # returned {:error, reason} for a list of items. Raising ends the stream,
   # which cancels the response and thereby closes the connection.
-  defp handle_stream(response, request, line_timeout) do
-    case receive_message(response, deadline(line_timeout)) do
-      {:ok, [data: chunk]} ->
-        json = Jason.decode(chunk)
+  defp receive_lines({response, :done}, _request, _line_timeout) do
+    {:halt, {response, :done}}
+  end
 
-        # evaluate message
-        result = evaluate_message(json, request)
+  defp receive_lines({response, rest}, request, line_timeout) do
+    receive_lines(response, rest, request, deadline(line_timeout))
+  end
 
-        # process the evaluated result
-        case result do
-          # push forward into the consumer stream
-          {:ok, message} ->
-            {[message], response}
-
-          {:error, reason} ->
-            raise(reason)
-
-          # handle heartbeat case
-          nil ->
-            {[], response}
+  defp receive_lines(response, rest, request, deadline) do
+    case receive_message(response, deadline) do
+      {:ok, [data: data]} ->
+        case split_lines(rest, data) do
+          {[], rest} -> receive_lines(response, rest, request, deadline)
+          {lines, rest} -> {lines, {response, rest}}
         end
+
+      # EventSourcingDB ends every line with a newline, including the last one.
+      # Still, a rest at the end of the response is a line as well.
+      {:ok, [:done]} ->
+        {lines, ""} = split_lines(rest, "\n")
+        {lines, {response, :done}}
+
+      # Other messages of the response, such as trailing headers, carry no
+      # line.
+      {:ok, _other} ->
+        receive_lines(response, rest, request, deadline)
 
       {:error, reason} ->
         raise(%TransmissionError{reason: reason})
 
-      # This is returned when the stream is done.
-      {:ok, [:done]} ->
-        {:halt, response}
-
       :timeout ->
         raise(timeout_error(request))
+    end
+  end
 
-      _something_else ->
-        {[], response}
+  # Splits the data at each newline into the lines it completes, the first of
+  # which begins with the rest of the data before, and a new rest, the start of
+  # a line whose newline has not arrived yet. Empty lines are skipped, and data
+  # without a newline, such as the empty data frame with which EventSourcingDB
+  # ends a response over HTTP/2, completes no line.
+  defp split_lines(rest, data) do
+    [first | others] = String.split(data, "\n")
+    {lines, [rest]} = Enum.split([rest <> first | others], -1)
+
+    {Enum.reject(lines, &(&1 == "")), rest}
+  end
+
+  defp handle_line(line, request) do
+    json = Jason.decode(line)
+
+    # evaluate message
+    result = evaluate_message(json, request)
+
+    # process the evaluated result
+    case result do
+      # push forward into the consumer stream
+      {:ok, message} -> [message]
+      {:error, reason} -> raise(reason)
+      # handle heartbeat case
+      nil -> []
     end
   end
 
@@ -678,12 +712,10 @@ defmodule EventSourcingDB do
     receive do
       {^ref, _} = message ->
         case Req.parse_message(response, message) do
-          # Some messages of the response carry no line, so they are skipped:
-          # trailing headers over HTTP/2, which Req does not recognise, and the
-          # empty data frame with which EventSourcingDB ends a response over
-          # HTTP/2.
+          # Req does not recognise every message of the response, for example
+          # trailing headers over HTTP/2. They carry no line, so they are
+          # skipped.
           :unknown -> receive_message(response, deadline)
-          {:ok, [data: ""]} -> receive_message(response, deadline)
           result -> result
         end
     after
@@ -851,7 +883,7 @@ defmodule EventSourcingDB do
   # than each wait for data, so a stream that runs for longer would end while
   # data still arrives. So the stream asks Finch for no timeout, and bounds
   # each wait itself: the wait for the response headers here, and the wait for
-  # each line in handle_stream/3. Req then waits for the response headers in a
+  # each line in receive_lines/3. Req then waits for the response headers in a
   # receive without any bound, which the caller can not interrupt, so the
   # request runs in a relay process, which forwards the messages of the
   # response to the caller, while the caller bounds the wait.
