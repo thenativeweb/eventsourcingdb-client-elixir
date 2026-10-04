@@ -602,22 +602,56 @@ defmodule EventSourcingDB do
     end
   end
 
-  @spec open_stream(Req.Request.t(), struct()) :: response(any())
+  @spec open_stream(Req.Request.t(), struct()) :: response(Req.Response.t())
   defp open_stream(req, request) do
+    receive_timeout = receive_timeout(req, request)
+
     response =
       if finch_bounds_each_wait?(req) do
         Req.request(req, stream_options(request))
       else
-        request_through_relay(req, receive_timeout(req, request))
+        request_through_relay(req, receive_timeout)
       end
 
-    # credo warns the last two statements to be redundant, but I can't figure
-    # out why it says so (they aren't)
-    # credo:disable-for-lines:1
-    with {:ok} <- validate_transmission(response),
-         {:ok} <- validate_server_headers(response),
-         {:ok, resp} <- validate_response(response) do
-      {:ok, resp}
+    with {:ok} <- validate_transmission(response) do
+      validate_stream_response(response, receive_timeout)
+    end
+  end
+
+  # A stream that fails to open closes its response right away, so that none
+  # of its messages stay behind in the mailbox.
+  defp validate_stream_response({:ok, response} = result, receive_timeout) do
+    with {:ok} <- validate_server_headers(result),
+         {:ok} <- validate_stream_status(response, receive_timeout) do
+      {:ok, response}
+    else
+      error ->
+        close_stream(response)
+        error
+    end
+  end
+
+  # For a status other than 200, the error carries the text that the server
+  # sent, as for the one-shot requests, so the body is read before the
+  # response is closed.
+  defp validate_stream_status(%Req.Response{status: 200}, _receive_timeout), do: {:ok}
+
+  defp validate_stream_status(response, receive_timeout) do
+    case read_body(response, receive_timeout, "") do
+      {:ok, body} -> {:error, %ApiError{reason: body}}
+      {:error, reason} -> {:error, %TransmissionError{reason: reason}}
+    end
+  end
+
+  # Reads the rest of the body, and waits for each block of it at most for the
+  # receive timeout.
+  defp read_body(response, receive_timeout, body) do
+    case receive_message(response, deadline(receive_timeout)) do
+      {:ok, [data: data]} -> read_body(response, receive_timeout, body <> data)
+      {:ok, [:done]} -> {:ok, body}
+      {:ok, _other} -> read_body(response, receive_timeout, body)
+      {:error, reason} -> {:error, reason}
+      :timeout -> {:error, %Req.TransportError{reason: :timeout}}
     end
   end
 
