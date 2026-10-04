@@ -52,7 +52,7 @@ client = EventSourcingDB.Client.new(
 )
 ```
 
-Streams work over HTTP/2 as well, and stay open for as long as data arrives. Set the protocol this way rather than in a Finch pool of your own, since the client can not tell the protocol of such a pool.
+Streams work over HTTP/2 as well, and stay open for as long as data arrives.
 
 ## Writing Events
 
