@@ -613,7 +613,7 @@ defmodule EventSourcingDB do
         request_through_relay(req, receive_timeout)
       end
 
-    with {:ok} <- validate_transmission(response) do
+    with :ok <- validate_transmission(response) do
       validate_stream_response(response, receive_timeout)
     end
   end
@@ -621,8 +621,8 @@ defmodule EventSourcingDB do
   # A stream that fails to open closes its response right away, so that none
   # of its messages stay behind in the mailbox.
   defp validate_stream_response({:ok, response} = result, receive_timeout) do
-    with {:ok} <- validate_server_headers(result),
-         {:ok} <- validate_stream_status(response, receive_timeout) do
+    with :ok <- validate_server_headers(result),
+         :ok <- validate_stream_status(response, receive_timeout) do
       {:ok, response}
     else
       error ->
@@ -634,7 +634,7 @@ defmodule EventSourcingDB do
   # For a status other than 200, the error carries the text that the server
   # sent, as for the one-shot requests, so the body is read before the
   # response is closed.
-  defp validate_stream_status(%Req.Response{status: 200}, _receive_timeout), do: {:ok}
+  defp validate_stream_status(%Req.Response{status: 200}, _receive_timeout), do: :ok
 
   defp validate_stream_status(response, receive_timeout) do
     case read_body(response, receive_timeout, "") do
@@ -886,8 +886,8 @@ defmodule EventSourcingDB do
     # dedicated function to validate response and request body respectively.
     # credo:disable-for-lines:2
     result =
-      with {:ok} <- validate_transmission(response),
-           {:ok} <- validate_server_headers(response),
+      with :ok <- validate_transmission(response),
+           :ok <- validate_server_headers(response),
            :ok <- validate_request_response(response, request_module),
            {:ok, resp} <- validate_response(response),
            {:ok, data} <- validate_request_body(resp.body, request_module) do
@@ -1067,19 +1067,21 @@ defmodule EventSourcingDB do
   # region Response Validation
   #
 
+  @spec validate_transmission({:ok, Req.Response.t()} | {:error, Exception.t()}) ::
+          :ok | {:error, TransmissionError.t()}
   defp validate_transmission({:error, reason}) do
     {:error, %TransmissionError{reason: reason}}
   end
 
-  defp validate_transmission({:ok, _}), do: {:ok}
+  defp validate_transmission({:ok, _}), do: :ok
 
   @spec validate_server_headers({:ok, Req.Response.t()}) ::
-          {:ok} | {:error, InvalidServerHeader.t()}
+          :ok | {:error, InvalidServerHeader.t()}
   defp validate_server_headers({:ok, response}) do
     if response
        |> Req.Response.get_header("Server")
        |> Enum.any?(fn val -> String.starts_with?(val, "EventSourcingDB/") end) do
-      {:ok}
+      :ok
     else
       {:error, %InvalidServerHeader{}}
     end
