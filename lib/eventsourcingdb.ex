@@ -228,6 +228,8 @@ defmodule EventSourcingDB do
 
   If something goes wrong while you enumerate the stream, the stream closes the connection and raises the corresponding error: an `EventSourcingDB.Errors.DBError` if EventSourcingDB reports an error, an `EventSourcingDB.Errors.TransmissionError` if the connection fails, an `EventSourcingDB.Errors.InvalidResponseType` if the response contains an item of an unexpected type, or a `Jason.DecodeError` if the response is not valid JSON.
 
+  Like all functions that return a stream, `read_events` receives the response as messages sent to the calling process, so enumerate the stream in that process. While you do, the stream leaves the other messages of the process, such as the calls and casts of a GenServer, in its mailbox.
+
   ### Reading From Subjects Recursively
 
   If you want to read not only all the events of a subject, but also the events of all nested subjects, set the `recursive` option to `true`:
@@ -658,14 +660,16 @@ defmodule EventSourcingDB do
     end
   end
 
-  # Waits for the next message of the response. Messages that do not belong to
-  # it are not a line, so they do not restart the heartbeat timeout.
-  defp receive_message(response, deadline) do
+  # Waits for the next message of the response. Finch tags every message of the
+  # response with the reference of the request, so only these are received,
+  # and all other messages of the process stay in its mailbox. They are not a
+  # line, so they do not restart the heartbeat timeout either.
+  defp receive_message(%Req.Response{body: %Req.Response.Async{ref: ref}} = response, deadline) do
     receive do
-      message ->
+      {^ref, _} = message ->
         case Req.parse_message(response, message) do
-          # This is received inside Finch from a process that is not the socket.
-          # Ideally Req should be able to handle this and return a proper error or ignore it.
+          # Req does not recognise every message of the response, for example
+          # trailing headers over HTTP/2. They carry no line, so they are skipped.
           :unknown -> receive_message(response, deadline)
           result -> result
         end

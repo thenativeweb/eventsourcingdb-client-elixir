@@ -55,6 +55,33 @@ defmodule EventSourcingDBTest.HeartbeatTimeout do
     assert_receive {:stream_server, :closed}, 1_000
   end
 
+  test "ends observing events with a heartbeat timeout even if other messages arrive" do
+    client =
+      StreamServer.start(fn socket ->
+        StreamServer.send_head(socket)
+        StreamServer.send_line(socket, @heartbeat)
+      end)
+
+    {result, elapsed} =
+      StreamServer.run_with_guard(fn ->
+        reader = self()
+
+        spawn_link(fn ->
+          for i <- 1..div(2 * @heartbeat_timeout, @heartbeat_interval) do
+            send(reader, {:unrelated, i})
+            Process.sleep(@heartbeat_interval)
+          end
+        end)
+
+        EventSourcingDB.observe_events!(client, "/test") |> Enum.to_list()
+      end)
+
+    assert match?({:raised, %HeartbeatTimeout{}}, result)
+    assert elapsed >= @heartbeat_timeout
+    assert elapsed < 2 * @heartbeat_timeout
+    assert_receive {:stream_server, :closed}, 1_000
+  end
+
   test "keeps observing events while heartbeats arrive" do
     client =
       StreamServer.start(fn socket ->
