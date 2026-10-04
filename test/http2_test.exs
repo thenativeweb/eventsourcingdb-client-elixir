@@ -119,6 +119,28 @@ defmodule EventSourcingDBTest.HTTP2 do
     assert result == {:ok, [Event.new(event_payload("0")), Event.new(event_payload("1"))]}
   end
 
+  test "reads an event over HTTP/2 whose line arrives in several data frames" do
+    line = Jason.encode!(event_line("0")) <> "\n"
+
+    client =
+      StreamServer.start(
+        fn connection ->
+          StreamServer.send_head(connection)
+          StreamServer.send_data(connection, binary_part(line, 0, 100))
+          StreamServer.send_data(connection, binary_part(line, 100, byte_size(line) - 100))
+          StreamServer.send_end(connection)
+        end,
+        protocol: :http2
+      )
+
+    {result, _elapsed} =
+      StreamServer.run_with_guard(fn ->
+        EventSourcingDB.read_events!(client, "/test") |> Enum.to_list()
+      end)
+
+    assert result == {:ok, [Event.new(event_payload("0"))]}
+  end
+
   test "ends observing events over HTTP/2 with a heartbeat timeout if nothing arrives" do
     client =
       StreamServer.start(

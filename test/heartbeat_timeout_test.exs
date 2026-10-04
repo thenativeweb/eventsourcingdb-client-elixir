@@ -82,6 +82,33 @@ defmodule EventSourcingDBTest.HeartbeatTimeout do
     assert_receive {:stream_server, :closed}, 1_000
   end
 
+  test "ends observing events with a heartbeat timeout if only parts of a line arrive" do
+    line = Jason.encode!(event_line("0")) <> "\n"
+
+    client =
+      StreamServer.start(fn socket ->
+        StreamServer.send_head(socket)
+        StreamServer.send_line(socket, @heartbeat)
+
+        # The first bytes of the line, one after the other, which do not
+        # complete it within twice the heartbeat timeout.
+        for <<byte <- binary_part(line, 0, div(2 * @heartbeat_timeout, @heartbeat_interval))>> do
+          Process.sleep(@heartbeat_interval)
+          StreamServer.send_data(socket, <<byte>>)
+        end
+      end)
+
+    {result, elapsed} =
+      StreamServer.run_with_guard(fn ->
+        EventSourcingDB.observe_events!(client, "/test") |> Enum.to_list()
+      end)
+
+    assert match?({:raised, %HeartbeatTimeout{}}, result)
+    assert elapsed >= @heartbeat_timeout
+    assert elapsed < 2 * @heartbeat_timeout
+    assert_receive {:stream_server, :closed}, 1_000
+  end
+
   test "keeps observing events while heartbeats arrive" do
     client =
       StreamServer.start(fn socket ->
