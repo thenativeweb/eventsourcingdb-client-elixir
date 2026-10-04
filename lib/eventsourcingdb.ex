@@ -226,6 +226,8 @@ defmodule EventSourcingDB do
   end
   ```
 
+  If something goes wrong while you enumerate the stream, the stream closes the connection and raises the corresponding error: an `EventSourcingDB.Errors.DBError` if EventSourcingDB reports an error, an `EventSourcingDB.Errors.TransmissionError` if the connection fails, an `EventSourcingDB.Errors.InvalidResponseType` if the response contains an item of an unexpected type, or a `Jason.DecodeError` if the response is not valid JSON.
+
   ### Reading From Subjects Recursively
 
   If you want to read not only all the events of a subject, but also the events of all nested subjects, set the `recursive` option to `true`:
@@ -333,6 +335,8 @@ defmodule EventSourcingDB do
 
   While there are no events to deliver, EventSourcingDB sends a heartbeat every second. If neither an event nor a heartbeat arrives for 30 seconds, the stream closes the connection and raises an `EventSourcingDB.Errors.HeartbeatTimeout` error.
 
+  If anything else goes wrong while you enumerate the stream, the stream closes the connection as well and raises the corresponding error: an `EventSourcingDB.Errors.DBError` if EventSourcingDB reports an error, an `EventSourcingDB.Errors.TransmissionError` if the connection fails, an `EventSourcingDB.Errors.InvalidResponseType` if the response contains an item of an unexpected type, or a `Jason.DecodeError` if the response is not valid JSON.
+
   ### Observing From Subjects Recursively
 
   If you want to observe not only all the events of a subject, but also the events of all nested subjects, set the `recursive` option to `true`:
@@ -421,6 +425,8 @@ defmodule EventSourcingDB do
 
   While there are no rows to deliver, EventSourcingDB sends a heartbeat every second. If neither a row nor a heartbeat arrives for 30 seconds, the stream closes the connection and raises an `EventSourcingDB.Errors.HeartbeatTimeout` error.
 
+  If anything else goes wrong while you enumerate the stream, the stream closes the connection as well and raises the corresponding error: an `EventSourcingDB.Errors.DBError` if EventSourcingDB reports an error, an `EventSourcingDB.Errors.TransmissionError` if the connection fails, an `EventSourcingDB.Errors.InvalidResponseType` if the response contains an item of an unexpected type, or a `Jason.DecodeError` if the response is not valid JSON.
+
   """
   @spec run_eventql_query(Client.t(), String.t()) :: stream_response(any())
   def run_eventql_query(client, query) do
@@ -479,6 +485,8 @@ defmodule EventSourcingDB do
   end
   ```
 
+  If something goes wrong while you enumerate the stream, the stream closes the connection and raises the corresponding error: an `EventSourcingDB.Errors.DBError` if EventSourcingDB reports an error, an `EventSourcingDB.Errors.TransmissionError` if the connection fails, an `EventSourcingDB.Errors.InvalidResponseType` if the response contains an item of an unexpected type, or a `Jason.DecodeError` if the response is not valid JSON.
+
   If you only want to list subjects within a specific branch, provide the desired base subject instead:
 
   ```elixir
@@ -528,6 +536,8 @@ defmodule EventSourcingDB do
     {:error, reason} -> # ...
   end
   ```
+
+  If something goes wrong while you enumerate the stream, the stream closes the connection and raises the corresponding error: an `EventSourcingDB.Errors.DBError` if EventSourcingDB reports an error, an `EventSourcingDB.Errors.TransmissionError` if the connection fails, an `EventSourcingDB.Errors.InvalidResponseType` if the response contains an item of an unexpected type, or a `Jason.DecodeError` if the response is not valid JSON.
   """
   @spec read_event_types(Client.t()) :: stream_response(EventType.t())
   def read_event_types(client) do
@@ -562,17 +572,13 @@ defmodule EventSourcingDB do
   defp request_stream(client, request) do
     case open_stream(client, request) do
       {:ok, response} ->
+        # Errors while the stream is read are raised, so the stream always
+        # hands the response to the cleanup, which closes the connection.
         stream =
           Stream.resource(
             fn -> response end,
             fn response -> handle_stream(response, request) end,
-            fn
-              %Req.Response{} = resp ->
-                Req.cancel_async_response(resp)
-
-              other ->
-                other
-            end
+            &Req.cancel_async_response/1
           )
 
         {:ok, stream}
@@ -611,6 +617,10 @@ defmodule EventSourcingDB do
 
   # Every call waits for the next line with a new deadline, so every line,
   # including a heartbeat, restarts the heartbeat timeout.
+  #
+  # Errors are raised rather than returned, because Stream.resource takes a
+  # returned {:error, reason} for a list of items. Raising ends the stream,
+  # which cancels the response and thereby closes the connection.
   defp handle_stream(response, request) do
     case receive_message(response, heartbeat_deadline(request)) do
       {:ok, [data: chunk]} ->
@@ -626,7 +636,7 @@ defmodule EventSourcingDB do
             {[message], response}
 
           {:error, reason} ->
-            {:error, reason}
+            raise(reason)
 
           # handle heartbeat case
           nil ->
@@ -634,14 +644,12 @@ defmodule EventSourcingDB do
         end
 
       {:error, reason} ->
-        {:error, reason}
+        raise(%TransmissionError{reason: reason})
 
       # This is returned when the stream is done.
       {:ok, [:done]} ->
         {:halt, response}
 
-      # Raising ends the stream, which cancels the response and thereby closes
-      # the connection.
       :heartbeat_timeout ->
         raise(%HeartbeatTimeout{})
 
