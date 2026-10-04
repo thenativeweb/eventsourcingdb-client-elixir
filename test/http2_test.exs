@@ -1,6 +1,8 @@
 defmodule EventSourcingDBTest.HTTP2 do
+  alias EventSourcingDB.Errors.ApiError
   alias EventSourcingDB.Errors.DBError
   alias EventSourcingDB.Errors.HeartbeatTimeout
+  alias EventSourcingDB.Errors.InvalidServerHeader
   alias EventSourcingDB.Errors.TransmissionError
   alias EventSourcingDB.Event
   alias EventSourcingDBTest.StreamServer
@@ -251,6 +253,60 @@ defmodule EventSourcingDBTest.HTTP2 do
     assert result ==
              {:ok, {["0", "1"], [:before_reading, {:while_reading, "0"}, {:while_reading, "1"}]}}
 
+    assert_receive {:stream_server, :closed}, 1_000
+  end
+
+  test "fails to read events over HTTP/2 with the text of an error response, and leaves none of its messages behind" do
+    client =
+      StreamServer.start(
+        fn connection ->
+          StreamServer.send_head(connection, 400, [
+            {"server", "EventSourcingDB/test"},
+            {"content-type", "text/plain; charset=utf-8"}
+          ])
+
+          StreamServer.send_data(connection, "malformed ")
+          Process.sleep(@heartbeat_interval)
+          StreamServer.send_data(connection, "subject\n")
+          StreamServer.send_end(connection)
+        end,
+        protocol: :http2
+      )
+
+    {result, _elapsed} =
+      StreamServer.run_with_guard(fn ->
+        result = EventSourcingDB.read_events(client, "invalid")
+        Process.sleep(2 * @heartbeat_interval)
+
+        {result, mailbox()}
+      end)
+
+    assert result == {:ok, {{:error, %ApiError{reason: "malformed subject\n"}}, []}}
+  end
+
+  test "fails to observe events over HTTP/2 from a server that is not EventSourcingDB, and closes the stream" do
+    client =
+      StreamServer.start(
+        fn connection ->
+          StreamServer.send_head(connection, 200, [
+            {"server", "SomethingElse/1.0"},
+            {"content-type", "application/x-ndjson"}
+          ])
+
+          send_heartbeats(connection, 5 * @heartbeat_interval)
+        end,
+        protocol: :http2
+      )
+
+    {result, _elapsed} =
+      StreamServer.run_with_guard(fn ->
+        result = EventSourcingDB.observe_events(client, "/test")
+        Process.sleep(2 * @heartbeat_interval)
+
+        {result, mailbox()}
+      end)
+
+    assert result == {:ok, {{:error, %InvalidServerHeader{}}, []}}
     assert_receive {:stream_server, :closed}, 1_000
   end
 

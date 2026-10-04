@@ -14,12 +14,9 @@ defmodule EventSourcingDBTest.StreamServer do
   # client ends a stream by resetting it and keeps the connection, so a reset
   # counts as closing.
 
-  @response_head [
-    "HTTP/1.1 200 OK\r\n",
-    "Server: EventSourcingDB/test\r\n",
-    "Content-Type: application/x-ndjson\r\n",
-    "Transfer-Encoding: chunked\r\n",
-    "\r\n"
+  @response_headers [
+    {"server", "EventSourcingDB/test"},
+    {"content-type", "application/x-ndjson"}
   ]
 
   @http2_preface "PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n"
@@ -65,20 +62,31 @@ defmodule EventSourcingDBTest.StreamServer do
   end
 
   @spec send_head(connection()) :: :ok | {:error, any()}
-  def send_head({:http2, socket, stream_id}) do
-    # The header fields other than the status are literals without indexing
-    # and without Huffman coding.
+  def send_head(connection) do
+    send_head(connection, 200, @response_headers)
+  end
+
+  # Sends the head of a response with the given status and header fields,
+  # whose body follows through send_data/2 and send_end/1.
+  @spec send_head(connection(), pos_integer(), [{String.t(), String.t()}]) ::
+          :ok | {:error, any()}
+  def send_head({:http2, socket, stream_id}, status, headers) do
+    # The header fields are literals without indexing and without Huffman
+    # coding.
     header_block = [
-      @status_200,
-      header_field("server", "EventSourcingDB/test"),
-      header_field("content-type", "application/x-ndjson")
+      status_field(status) | Enum.map(headers, fn {name, value} -> header_field(name, value) end)
     ]
 
     send_frame(socket, @headers_frame, @end_headers_flag, stream_id, header_block)
   end
 
-  def send_head(socket) do
-    :gen_tcp.send(socket, @response_head)
+  def send_head(socket, status, headers) do
+    :gen_tcp.send(socket, [
+      "HTTP/1.1 #{status} \r\n",
+      Enum.map(headers, fn {name, value} -> [name, ": ", value, "\r\n"] end),
+      "transfer-encoding: chunked\r\n",
+      "\r\n"
+    ])
   end
 
   @spec send_line(connection(), map()) :: :ok | {:error, any()}
@@ -250,6 +258,12 @@ defmodule EventSourcingDBTest.StreamServer do
     length = IO.iodata_length(payload)
 
     :gen_tcp.send(socket, [<<length::24, type::8, flags::8, 0::1, stream_id::31>>, payload])
+  end
+
+  # The status takes the name of entry 8 of the static HPACK table.
+  defp status_field(status) do
+    value = Integer.to_string(status)
+    [0x08, byte_size(value), value]
   end
 
   defp header_field(name, value) do

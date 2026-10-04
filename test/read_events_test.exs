@@ -1,4 +1,5 @@
 defmodule EventSourcingDBTest.ReadEvents do
+  alias EventSourcingDB.Errors.ApiError
   alias EventSourcingDB.Errors.TransmissionError
   alias EventSourcingDB.Client
   alias EventSourcingDB.ReadFromLatestEventOptions
@@ -31,6 +32,16 @@ defmodule EventSourcingDBTest.ReadEvents do
     stream = EventSourcingDB.read_events(client, "/")
 
     assert match?({:error, %TransmissionError{}}, stream)
+  end
+
+  test "read with malformed subject", %{esdb: esdb} do
+    client = TestContainer.get_client(esdb)
+
+    result = EventSourcingDB.read_events(client, "malformed")
+    {:messages, messages} = Process.info(self(), :messages)
+
+    assert result == {:error, %ApiError{reason: "malformed subject\n"}}
+    assert messages == []
   end
 
   test "make read call with event", %{esdb: esdb} do
