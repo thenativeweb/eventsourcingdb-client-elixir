@@ -40,6 +40,20 @@ If you want to verify the API token, call `verify_api_token`. If the token is in
 :ok = EventSourcingDB.verify_api_token(client)
 ```
 
+### Using HTTP/2
+
+By default, the client uses HTTP/1.1. To use HTTP/2, which EventSourcingDB offers over HTTPS, pass the protocol on to [Req](https://hexdocs.pm/req) via the `req_options` of the client:
+
+```elixir
+client = EventSourcingDB.Client.new(
+  base_url: "https://localhost:4000",
+  api_token: "secret",
+  req_options: [connect_options: [protocols: [:http2]]]
+)
+```
+
+Streams work over HTTP/2 as well, and stay open for as long as data arrives. Set the protocol this way rather than in a Finch pool of your own, since the client can not tell the protocol of such a pool.
+
 ## Writing Events
 
 Call the `write_events` function and hand over a list with one or more events. You do not have to provide all event fields – some are automatically added by the server.

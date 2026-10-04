@@ -560,6 +560,10 @@ defmodule EventSourcingDB do
   # the tests shorten it through the application environment.
   @heartbeat_timeout 30_000
 
+  # Finch waits this many milliseconds for data, unless the client sets a
+  # receive timeout of its own.
+  @receive_timeout 15_000
+
   @spec request_stream!(Client.t(), struct()) :: stream_response!(any())
   defp request_stream!(client, request) do
     result = request_stream(client, request)
@@ -572,15 +576,19 @@ defmodule EventSourcingDB do
 
   @spec request_stream(Client.t(), struct()) :: stream_response(any())
   defp request_stream(client, request) do
-    case open_stream(client, request) do
+    req = build_request(client, request)
+
+    case open_stream(req, request) do
       {:ok, response} ->
+        line_timeout = line_timeout(req, request)
+
         # Errors while the stream is read are raised, so the stream always
         # hands the response to the cleanup, which closes the connection.
         stream =
           Stream.resource(
             fn -> response end,
-            fn response -> handle_stream(response, request) end,
-            &Req.cancel_async_response/1
+            fn response -> handle_stream(response, request, line_timeout) end,
+            &close_stream/1
           )
 
         {:ok, stream}
@@ -590,12 +598,14 @@ defmodule EventSourcingDB do
     end
   end
 
-  @spec open_stream(Client.t(), struct()) :: response(any())
-  defp open_stream(client, request) do
+  @spec open_stream(Req.Request.t(), struct()) :: response(any())
+  defp open_stream(req, request) do
     response =
-      client
-      |> build_request(request)
-      |> Req.request(stream_options(request))
+      if finch_bounds_each_wait?(req) do
+        Req.request(req, stream_options(request))
+      else
+        request_through_relay(req, receive_timeout(req, request))
+      end
 
     # credo warns the last two statements to be redundant, but I can't figure
     # out why it says so (they aren't)
@@ -623,8 +633,8 @@ defmodule EventSourcingDB do
   # Errors are raised rather than returned, because Stream.resource takes a
   # returned {:error, reason} for a list of items. Raising ends the stream,
   # which cancels the response and thereby closes the connection.
-  defp handle_stream(response, request) do
-    case receive_message(response, heartbeat_deadline(request)) do
+  defp handle_stream(response, request, line_timeout) do
+    case receive_message(response, deadline(line_timeout)) do
       {:ok, [data: chunk]} ->
         json = Jason.decode(chunk)
 
@@ -652,8 +662,8 @@ defmodule EventSourcingDB do
       {:ok, [:done]} ->
         {:halt, response}
 
-      :heartbeat_timeout ->
-        raise(%HeartbeatTimeout{})
+      :timeout ->
+        raise(timeout_error(request))
 
       _something_else ->
         {[], response}
@@ -668,22 +678,54 @@ defmodule EventSourcingDB do
     receive do
       {^ref, _} = message ->
         case Req.parse_message(response, message) do
-          # Req does not recognise every message of the response, for example
-          # trailing headers over HTTP/2. They carry no line, so they are skipped.
+          # Some messages of the response carry no line, so they are skipped:
+          # trailing headers over HTTP/2, which Req does not recognise, and the
+          # empty data frame with which EventSourcingDB ends a response over
+          # HTTP/2.
           :unknown -> receive_message(response, deadline)
+          {:ok, [data: ""]} -> receive_message(response, deadline)
           result -> result
         end
     after
-      remaining_time(deadline) -> :heartbeat_timeout
+      remaining_time(deadline) -> :timeout
     end
   end
 
-  defp heartbeat_deadline(request) do
+  # Closes the connection, and cleans up the messages of the response that are
+  # left in the mailbox.
+  defp close_stream(response) do
+    case Req.Response.get_private(response, :relay) do
+      nil -> :ok
+      relay -> stop_relay(relay, Process.monitor(relay))
+    end
+
+    Req.cancel_async_response(response)
+  end
+
+  # How long a stream waits for the next line. For streams with heartbeats,
+  # this is the heartbeat timeout. For other streams, Finch bounds each wait
+  # for data with the receive timeout, unless the stream has to bound it
+  # itself (see request_through_relay/2).
+  defp line_timeout(req, request) do
     case heartbeat_timeout(request) do
-      :infinity -> :infinity
-      timeout -> System.monotonic_time(:millisecond) + timeout
+      :infinity ->
+        if finch_bounds_each_wait?(req), do: :infinity, else: receive_timeout(req, request)
+
+      timeout ->
+        timeout
     end
   end
+
+  defp timeout_error(request) do
+    if get_request_module(request).heartbeats?() do
+      %HeartbeatTimeout{}
+    else
+      %TransmissionError{reason: %Req.TransportError{reason: :timeout}}
+    end
+  end
+
+  defp deadline(:infinity), do: :infinity
+  defp deadline(timeout), do: System.monotonic_time(:millisecond) + timeout
 
   defp remaining_time(:infinity), do: :infinity
   defp remaining_time(deadline), do: max(deadline - System.monotonic_time(:millisecond), 0)
@@ -694,6 +736,45 @@ defmodule EventSourcingDB do
     else
       :infinity
     end
+  end
+
+  # The receive timeout bounds each wait for data, including the wait for the
+  # response headers. For streams with heartbeats, it must not end the stream
+  # before the heartbeat timeout does (see stream_options/1).
+  defp receive_timeout(req, request) do
+    case heartbeat_timeout(request) do
+      :infinity -> Req.Request.get_option(req, :receive_timeout, @receive_timeout)
+      timeout -> 2 * timeout
+    end
+  end
+
+  # Finch bounds each wait for data with the receive timeout only in an HTTP/1
+  # pool, and the whole request in an HTTP/2 pool. Req starts an HTTP/2 pool if
+  # the protocols leave out HTTP/1 (with both, the protocol is negotiated per
+  # connection within an HTTP/1 pool). The protocols of a pool that the client
+  # brings by name are unknown, so such a pool counts as HTTP/1.
+  defp finch_bounds_each_wait?(req) do
+    case Req.Request.get_option(req, :finch) do
+      nil ->
+        http1_pool?(req, [])
+
+      options when is_list(options) ->
+        Keyword.has_key?(options, :name) or http1_pool?(req, options)
+
+      _name ->
+        true
+    end
+  end
+
+  # Req takes the protocols from the Finch options, or else from the connection
+  # options.
+  defp http1_pool?(req, finch_options) do
+    protocols =
+      Keyword.get_lazy(finch_options, :protocols, fn ->
+        Req.Finch.pool_options(req.options)[:protocols]
+      end)
+
+    :http1 in protocols
   end
 
   defp evaluate_message(message, request) do
@@ -759,6 +840,112 @@ defmodule EventSourcingDB do
     case result do
       {:ok, data} -> data
       {:error, reason} -> raise(reason)
+    end
+  end
+
+  #
+  # region Relay
+  #
+
+  # Over HTTP/2, Finch bounds a whole request with the receive timeout, rather
+  # than each wait for data, so a stream that runs for longer would end while
+  # data still arrives. So the stream asks Finch for no timeout, and bounds
+  # each wait itself: the wait for the response headers here, and the wait for
+  # each line in handle_stream/3. Req then waits for the response headers in a
+  # receive without any bound, which the caller can not interrupt, so the
+  # request runs in a relay process, which forwards the messages of the
+  # response to the caller, while the caller bounds the wait.
+  #
+  # The relay is linked to the caller while it waits for the response headers,
+  # and monitors it afterwards, so it does not outlive the caller. Finch in turn
+  # cancels the request once the relay is down.
+  defp request_through_relay(req, timeout) do
+    caller = self()
+    relay = spawn_link(fn -> run_relay(caller, req) end)
+    monitor = Process.monitor(relay)
+
+    receive do
+      {^relay, result} ->
+        Process.demonitor(monitor, [:flush])
+        relay_result(relay, result)
+
+      {:DOWN, ^monitor, :process, ^relay, reason} ->
+        exit(reason)
+    after
+      timeout ->
+        Process.unlink(relay)
+        stop_relay(relay, monitor)
+        discard_relay_result(relay)
+        {:error, %Req.TransportError{reason: :timeout}}
+    end
+  end
+
+  defp relay_result(relay, {:ok, response}) do
+    {:ok, Req.Response.put_private(response, :relay, relay)}
+  end
+
+  defp relay_result(_relay, {:raised, kind, reason, stacktrace}) do
+    :erlang.raise(kind, reason, stacktrace)
+  end
+
+  defp relay_result(_relay, result), do: result
+
+  # Once the relay is down, every message it forwarded is in the mailbox.
+  defp stop_relay(relay, monitor) do
+    Process.exit(relay, :kill)
+
+    receive do
+      {:DOWN, ^monitor, :process, ^relay, _reason} -> :ok
+    end
+  end
+
+  # The relay may have sent its result just before it was stopped.
+  defp discard_relay_result(relay) do
+    receive do
+      {^relay, {:ok, response}} -> Req.cancel_async_response(response)
+      {^relay, _result} -> :ok
+    after
+      0 -> :ok
+    end
+  end
+
+  defp run_relay(caller, req) do
+    monitor = Process.monitor(caller)
+
+    result =
+      try do
+        Req.request(req, into: :self, receive_timeout: :infinity)
+      catch
+        kind, reason -> {:raised, kind, reason, __STACKTRACE__}
+      end
+
+    # From here on, the monitor watches the caller, and the link would only
+    # leave an exit message for a caller that traps exits.
+    Process.unlink(caller)
+    send(caller, {self(), result})
+
+    case result do
+      {:ok, %Req.Response{body: %Req.Response.Async{ref: ref}}} -> forward(caller, monitor, ref)
+      _other -> :ok
+    end
+  end
+
+  # Forwards the messages of the response to the caller until the response
+  # ends, or until the caller is down.
+  defp forward(caller, monitor, ref) do
+    receive do
+      {^ref, :done} = message ->
+        send(caller, message)
+
+      {^ref, {:error, _reason}} = message ->
+        send(caller, message)
+
+      {^ref, _} = message ->
+        send(caller, message)
+        forward(caller, monitor, ref)
+
+      {:DOWN, ^monitor, :process, ^caller, _reason} ->
+        :ok
     end
   end
 
