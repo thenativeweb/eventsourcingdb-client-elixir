@@ -17,6 +17,8 @@ defmodule EventSourcingDBTest.StreamServer do
     "\r\n"
   ]
 
+  @guard_timeout 5_000
+
   @spec start((:gen_tcp.socket() -> any())) :: Client.t()
   def start(script) do
     owner = self()
@@ -42,9 +44,34 @@ defmodule EventSourcingDBTest.StreamServer do
 
   @spec send_line(:gen_tcp.socket(), map()) :: :ok | {:error, any()}
   def send_line(socket, line) do
-    data = Jason.encode!(line) <> "\n"
+    send_data(socket, Jason.encode!(line) <> "\n")
+  end
 
+  @spec send_data(:gen_tcp.socket(), binary()) :: :ok | {:error, any()}
+  def send_data(socket, data) do
     :gen_tcp.send(socket, [Integer.to_string(byte_size(data), 16), "\r\n", data, "\r\n"])
+  end
+
+  # Runs the given function in a separate process, which opens and reads the
+  # stream, and fails the test if it does not return in time, so a stream that
+  # never ends can not hang the test suite.
+  @spec run_with_guard((-> any())) :: {{:ok, any()} | {:raised, Exception.t()}, integer()}
+  def run_with_guard(fun) do
+    started_at = System.monotonic_time(:millisecond)
+
+    task =
+      Task.async(fn ->
+        try do
+          {:ok, fun.()}
+        rescue
+          exception -> {:raised, exception}
+        end
+      end)
+
+    case Task.yield(task, @guard_timeout) || Task.shutdown(task, :brutal_kill) do
+      {:ok, result} -> {result, System.monotonic_time(:millisecond) - started_at}
+      _ -> ExUnit.Assertions.flunk("Stream did not end within #{@guard_timeout} ms.")
+    end
   end
 
   defp serve(owner, script) do

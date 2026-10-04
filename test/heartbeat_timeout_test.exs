@@ -10,7 +10,6 @@ defmodule EventSourcingDBTest.HeartbeatTimeout do
 
   @heartbeat_timeout 500
   @heartbeat_interval 100
-  @guard_timeout 5_000
 
   @heartbeat %{"type" => "heartbeat", "payload" => %{}}
 
@@ -27,7 +26,7 @@ defmodule EventSourcingDBTest.HeartbeatTimeout do
       end)
 
     {result, elapsed} =
-      run_with_guard(fn ->
+      StreamServer.run_with_guard(fn ->
         EventSourcingDB.observe_events!(client, "/test") |> Enum.to_list()
       end)
 
@@ -45,7 +44,7 @@ defmodule EventSourcingDBTest.HeartbeatTimeout do
       end)
 
     {result, elapsed} =
-      run_with_guard(fn ->
+      StreamServer.run_with_guard(fn ->
         EventSourcingDB.run_eventql_query!(client, "FROM e IN events PROJECT INTO e")
         |> Enum.to_list()
       end)
@@ -65,7 +64,7 @@ defmodule EventSourcingDBTest.HeartbeatTimeout do
       end)
 
     {result, elapsed} =
-      run_with_guard(fn ->
+      StreamServer.run_with_guard(fn ->
         EventSourcingDB.observe_events!(client, "/test") |> Enum.take(1)
       end)
 
@@ -82,7 +81,7 @@ defmodule EventSourcingDBTest.HeartbeatTimeout do
       end)
 
     {result, elapsed} =
-      run_with_guard(fn ->
+      StreamServer.run_with_guard(fn ->
         EventSourcingDB.run_eventql_query!(client, "FROM e IN events PROJECT INTO e.data.value")
         |> Enum.take(1)
       end)
@@ -102,7 +101,7 @@ defmodule EventSourcingDBTest.HeartbeatTimeout do
       end)
 
     {result, _elapsed} =
-      run_with_guard(fn ->
+      StreamServer.run_with_guard(fn ->
         EventSourcingDB.observe_events!(client, "/test") |> Enum.take(2)
       end)
 
@@ -120,7 +119,7 @@ defmodule EventSourcingDBTest.HeartbeatTimeout do
       end)
 
     {result, _elapsed} =
-      run_with_guard(fn ->
+      StreamServer.run_with_guard(fn ->
         EventSourcingDB.run_eventql_query!(client, "FROM e IN events PROJECT INTO e.data.value")
         |> Enum.take(2)
       end)
@@ -137,7 +136,7 @@ defmodule EventSourcingDBTest.HeartbeatTimeout do
       end)
 
     {result, elapsed} =
-      run_with_guard(fn ->
+      StreamServer.run_with_guard(fn ->
         EventSourcingDB.observe_events!(client, "/test") |> Enum.take(1)
       end)
 
@@ -156,7 +155,7 @@ defmodule EventSourcingDBTest.HeartbeatTimeout do
       end)
 
     {result, _elapsed} =
-      run_with_guard(fn ->
+      StreamServer.run_with_guard(fn ->
         EventSourcingDB.read_events!(client, "/test") |> Enum.take(2)
       end)
 
@@ -167,32 +166,11 @@ defmodule EventSourcingDBTest.HeartbeatTimeout do
     client = StreamServer.start(fn _socket -> :ok end)
 
     {result, _elapsed} =
-      run_with_guard(fn ->
+      StreamServer.run_with_guard(fn ->
         EventSourcingDB.observe_events(client, "/test")
       end)
 
     assert match?({:ok, {:error, %TransmissionError{}}}, result)
-  end
-
-  # Runs the given function in a separate process, which opens and reads the
-  # stream, and fails the test if it does not return in time, so a stream that
-  # never ends can not hang the test suite.
-  defp run_with_guard(fun) do
-    started_at = System.monotonic_time(:millisecond)
-
-    task =
-      Task.async(fn ->
-        try do
-          {:ok, fun.()}
-        rescue
-          exception -> {:raised, exception}
-        end
-      end)
-
-    case Task.yield(task, @guard_timeout) || Task.shutdown(task, :brutal_kill) do
-      {:ok, result} -> {result, System.monotonic_time(:millisecond) - started_at}
-      _ -> flunk("Stream did not end within #{@guard_timeout} ms.")
-    end
   end
 
   defp send_heartbeats(socket, duration) do
