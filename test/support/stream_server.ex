@@ -31,9 +31,6 @@ defmodule EventSourcingDBTest.StreamServer do
   @ack_flag 0x1
   @end_headers_flag 0x4
 
-  # The status 200 is entry 8 of the static HPACK table.
-  @status_200 0x88
-
   @guard_timeout 5_000
 
   @type connection() :: :gen_tcp.socket() | {:http2, :gen_tcp.socket(), pos_integer()}
@@ -52,7 +49,6 @@ defmodule EventSourcingDBTest.StreamServer do
 
         if protocol == :http2 do
           ExUnit.Callbacks.on_exit(fn -> stop_pool(req_options, base_url) end)
-          warm_up(req_options, base_url)
         end
 
         Client.new(base_url: base_url, api_token: "secret", req_options: req_options)
@@ -139,24 +135,6 @@ defmodule EventSourcingDBTest.StreamServer do
   defp req_options(:http1), do: []
   defp req_options(:http2), do: [connect_options: [protocols: [:http2]]]
 
-  # Finch registers an HTTP/2 pool only once it has connected, and fails a
-  # request with :pool_not_available until then, which is likely for the first
-  # request to a new pool. So a first request, which the server answers by
-  # itself, retries until the pool is ready, and the client then finds it so.
-  defp warm_up(req_options, base_url) do
-    retry = fn _request, response_or_exception ->
-      case response_or_exception do
-        %Req.HTTPError{reason: :pool_not_available} -> {:delay, 10}
-        _ -> false
-      end
-    end
-
-    {:ok, %Req.Response{status: 200}} =
-      req_options
-      |> Keyword.merge(url: base_url, retry: retry, max_retries: 100, retry_log_level: false)
-      |> Req.request()
-  end
-
   # Req starts a Finch pool for connection options of their own. An HTTP/2
   # pool reconnects once the server is gone, and logs a warning whenever that
   # fails, so the pool is stopped after the test.
@@ -191,11 +169,6 @@ defmodule EventSourcingDBTest.StreamServer do
   defp receive_request(socket, :http2) do
     {:ok, @http2_preface} = :gen_tcp.recv(socket, byte_size(@http2_preface))
     :ok = send_frame(socket, @settings_frame, 0, 0, "")
-
-    # The first request is the warm-up, see warm_up/2.
-    warm_up_stream_id = receive_http2_request(socket)
-    flags = Bitwise.bor(@end_headers_flag, @end_stream_flag)
-    :ok = send_frame(socket, @headers_frame, flags, warm_up_stream_id, [@status_200])
 
     {:http2, socket, receive_http2_request(socket)}
   end

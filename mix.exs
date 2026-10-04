@@ -86,6 +86,7 @@ defmodule EventSourcingDB.MixProject do
   defp deps do
     [
       {:req, "~> 0.7.2"},
+      {:finch, "~> 0.24"},
       {:jason, "~> 1.2"},
       {:jose, "~> 1.11"},
       {:ex_json_schema, "~> 0.11.2"},

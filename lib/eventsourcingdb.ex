@@ -818,17 +818,18 @@ defmodule EventSourcingDB do
   # pool, and the whole request in an HTTP/2 pool. Req starts an HTTP/2 pool if
   # the protocols leave out HTTP/1 (with both, the protocol is negotiated per
   # connection within an HTTP/1 pool). The protocols of a pool that the client
-  # brings by name are unknown, so such a pool counts as HTTP/1.
+  # brings by name are unknown, so the stream bounds each wait itself there,
+  # whether the pool speaks HTTP/1 or HTTP/2.
   defp finch_bounds_each_wait?(req) do
     case Req.Request.get_option(req, :finch) do
       nil ->
         http1_pool?(req, [])
 
       options when is_list(options) ->
-        Keyword.has_key?(options, :name) or http1_pool?(req, options)
+        not Keyword.has_key?(options, :name) and http1_pool?(req, options)
 
       _name ->
-        true
+        false
     end
   end
 
@@ -920,7 +921,9 @@ defmodule EventSourcingDB do
   # each line in receive_lines/3. Req then waits for the response headers in a
   # receive without any bound, which the caller can not interrupt, so the
   # request runs in a relay process, which forwards the messages of the
-  # response to the caller, while the caller bounds the wait.
+  # response to the caller, while the caller bounds the wait. A pool that the
+  # client brings by name takes this path as well, even one that speaks
+  # HTTP/1, where Finch then waits for data without a bound, too.
   #
   # The relay is linked to the caller while it waits for the response headers,
   # and monitors it afterwards, so it does not outlive the caller. Finch in turn
