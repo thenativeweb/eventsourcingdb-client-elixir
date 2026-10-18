@@ -23,7 +23,7 @@ defmodule EventSourcingDB.Transport.V2 do
     TransmissionError
   }
 
-  alias EventSourcingDB.Transport.{HTTP, WriteOutcome}
+  alias EventSourcingDB.Transport.{ApiVersion, HTTP, WriteOutcome}
 
   #
   # region Requests with a single answer
@@ -71,11 +71,19 @@ defmodule EventSourcingDB.Transport.V2 do
         envelope(text)
 
       {:ok, %Req.Response{body: text} = response} ->
-        {:error, DbApiError.from_response(response, text)}
+        {:error, status_error(client, response, text)}
 
       {:error, reason} ->
         {:error, reason}
     end
+  end
+
+  # A server that answers a route of the v2 API with 404 or 405 no longer
+  # offers it, for example because it was rolled back to a version without
+  # it, so the API is forgotten, and the next request asks again.
+  defp status_error(client, %Req.Response{status: status} = response, text) do
+    if status in [404, 405], do: ApiVersion.forget(client)
+    DbApiError.from_response(response, text)
   end
 
   defp envelope(text) do
@@ -100,7 +108,8 @@ defmodule EventSourcingDB.Transport.V2 do
       decode: decoder("event", &event/2),
       heartbeats?: true,
       ending: :end_item,
-      track_sending: true
+      track_sending: true,
+      status_error: &status_error(client, &1, &2)
     )
     |> collect()
     |> WriteOutcome.classify(:v2)
@@ -125,7 +134,8 @@ defmodule EventSourcingDB.Transport.V2 do
       decode: decoder("event", fn data, _line -> schema_registered(data) end),
       heartbeats?: true,
       ending: :end_item,
-      track_sending: true
+      track_sending: true,
+      status_error: &status_error(client, &1, &2)
     )
     |> collect()
     |> then(fn
@@ -202,6 +212,7 @@ defmodule EventSourcingDB.Transport.V2 do
 
   defp stream(client, path, body, options) do
     HTTP.stream(client, :query, path, body,
+      status_error: &status_error(client, &1, &2),
       decode: decoder(Keyword.fetch!(options, :type), Keyword.fetch!(options, :process)),
       heartbeats?: true,
       ending: Keyword.get(options, :ending, :end_item)

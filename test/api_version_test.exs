@@ -164,6 +164,35 @@ defmodule EventSourcingDBTest.ApiVersion do
            ]
   end
 
+  describe "a server that is rolled back to a version without the v2 API" do
+    for call <- [:verify_api_token, :read_event_types, :write_events] do
+      @call call
+
+      test "fails #{call} once with the 404 of the v2 route, and is asked for its API again on the next request" do
+        api = start_supervised!({Agent, fn -> :v2 end}, id: make_ref())
+
+        url =
+          FakeServer.start(fn request ->
+            case Agent.get(api, & &1) do
+              :v2 -> v2_server(request)
+              :v1 -> v1_server(request, 404)
+            end
+          end)
+
+        client = client(url)
+        assert :ok = succeed(@call, client)
+
+        Agent.update(api, fn _api -> :v1 end)
+
+        assert {:error, error} = run(@call, client)
+        assert %DbApiError{status: 404} = unwrap_outcome(error)
+        assert :ok = succeed(@call, client)
+
+        assert Enum.count(received_requests(), &(&1 == {"GET", "/api/v2/system/ping"})) == 2
+      end
+    end
+  end
+
   describe "a probe that fails" do
     test "fails the request with the error of the server, remembers nothing, and is made again on the next request" do
       answers = start_answers([{503, "server is shutting down\n"}, {404, "404 page not found\n"}])
@@ -302,6 +331,22 @@ defmodule EventSourcingDBTest.ApiVersion do
     end
   end
 
+  defp run(:verify_api_token, client), do: EventSourcingDB.verify_api_token(client)
+  defp run(:read_event_types, client), do: EventSourcingDB.read_event_types(client)
+  defp run(:write_events, client), do: EventSourcingDB.write_events(client, [candidate()])
+
+  # Runs the call, and reads a stream that it returns to its end.
+  defp succeed(call, client) do
+    case run(call, client) do
+      :ok -> :ok
+      {:ok, items} -> if is_list(Enum.to_list(items)), do: :ok
+      error -> error
+    end
+  end
+
+  defp unwrap_outcome(%EventSourcingDB.Errors.OutcomeUnknown{cause: cause}), do: cause
+  defp unwrap_outcome(error), do: error
+
   # Answers the v2 ping as EventSourcingDB 1.3 does, and every other request
   # successfully.
   defp v2_server(%{path: "/api/v2/system/ping"}),
@@ -310,6 +355,18 @@ defmodule EventSourcingDBTest.ApiVersion do
   defp v2_server(%{path: "/api/v2/system/verify-token"}) do
     {200, [{"content-type", "application/json"}],
      String.replace(@v2_ping, "ping-received", "token-verified")}
+  end
+
+  defp v2_server(%{path: "/api/v2/data/read-event-types"}) do
+    {:lines, [%{"type" => "end", "data" => %{}}]}
+  end
+
+  defp v2_server(%{path: "/api/v2/data/write-events"}) do
+    {:lines,
+     [
+       %{"type" => "event", "data" => Jason.decode!(written_event())},
+       %{"type" => "end", "data" => %{}}
+     ]}
   end
 
   # Answers the v2 ping with the given status, or with the next of the given
@@ -327,21 +384,34 @@ defmodule EventSourcingDBTest.ApiVersion do
     do: {200, [{"content-type", "application/json"}], @v1_ping}
 
   defp v1_server(%{path: "/api/v1/write-events"}, _answers) do
+    {200, [{"content-type", "application/json"}], "[" <> written_event() <> "]"}
+  end
+
+  defp v1_server(%{path: "/api/v1/read-event-types"}, _answers) do
+    {200, [{"content-type", "application/x-ndjson"}], ""}
+  end
+
+  defp v1_server(%{path: "/api/v1/verify-api-token"}, _answers) do
     {200, [{"content-type", "application/json"}],
-     Jason.encode!([
-       %{
-         "specversion" => "1.0",
-         "id" => "0",
-         "source" => "https://www.eventsourcingdb.io",
-         "subject" => "/test",
-         "type" => "io.eventsourcingdb.test",
-         "time" => "2026-10-18T12:00:00.000000000Z",
-         "datacontenttype" => "application/json",
-         "predecessorhash" => String.duplicate("0", 64),
-         "data" => %{"value" => 1},
-         "hash" => String.duplicate("0", 64)
-       }
-     ])}
+     String.replace(@v1_ping, "ping-received", "api-token-verified")}
+  end
+
+  # A server without the v2 API answers its routes with 404.
+  defp v1_server(%{path: "/api/v2/" <> _route}, _answers), do: {404, "404 page not found\n"}
+
+  defp written_event() do
+    Jason.encode!(%{
+      "specversion" => "1.0",
+      "id" => "0",
+      "source" => "https://www.eventsourcingdb.io",
+      "subject" => "/test",
+      "type" => "io.eventsourcingdb.test",
+      "time" => "2026-10-18T12:00:00.000000000Z",
+      "datacontenttype" => "application/json",
+      "predecessorhash" => String.duplicate("0", 64),
+      "data" => %{"value" => 1},
+      "hash" => String.duplicate("0", 64)
+    })
   end
 
   # Holds the v2 ping until the test releases it, and then answers it as
