@@ -89,6 +89,31 @@ defmodule EventSourcingDBTest.WriteOutcome do
     end
   end
 
+  # Req retries a write only if the client asks it to, and an attempt that was
+  # sent keeps the write possibly stored, even if a retry after it can not
+  # connect.
+  test "a write over the v1 API that was sent stays possibly stored, even if a retry can not connect" do
+    owner = self()
+    {:ok, listen_socket} = :gen_tcp.listen(0, [:binary, active: false, reuseaddr: true])
+    {:ok, port} = :inet.port(listen_socket)
+    start_supervised!({Task, fn -> drop_first_request(listen_socket, owner) end})
+
+    client =
+      client("http://127.0.0.1:#{port}",
+        retry: :transient,
+        retry_delay: 0,
+        max_retries: 1
+      )
+
+    :ok = ApiVersion.remember(client, :v1)
+    on_exit(fn -> ApiVersion.forget(client) end)
+
+    assert {:error, %OutcomeUnknown{cause: %TransmissionError{reason: %{reason: :econnrefused}}}} =
+             write(:write_events, client)
+
+    assert_received :request_dropped
+  end
+
   # Without Finch, nothing tells when a failure happened, so only the reason
   # is known, which a connection that was established may fail with as well.
   for reason <- [:ehostunreach, :enetunreach, {:tls_alert, {:bad_record_mac, ~c"alert"}}] do
@@ -258,5 +283,15 @@ defmodule EventSourcingDBTest.WriteOutcome do
         {key, _value} <- :ets.tab2list(table),
         is_pid(key) and not Process.alive?(key),
         do: {table, key}
+  end
+
+  # Receives the first request, closes its connection without an answer, and
+  # stops listening, so that the next attempt can not connect.
+  defp drop_first_request(listen_socket, owner) do
+    {:ok, socket} = :gen_tcp.accept(listen_socket)
+    {:ok, _request} = :gen_tcp.recv(socket, 0)
+    :ok = :gen_tcp.close(listen_socket)
+    :ok = :gen_tcp.close(socket)
+    send(owner, :request_dropped)
   end
 end
