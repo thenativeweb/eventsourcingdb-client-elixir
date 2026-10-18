@@ -241,6 +241,14 @@ defmodule EventSourcingDB.TestContainer do
 
     @image_name "thenativeweb/eventsourcingdb"
 
+    # The container is ready once EventSourcingDB answers its ping, which it
+    # is given 10 seconds for. HttpWaitStrategy bounds all its attempts
+    # together, with the pauses between them, by its timeout divided by its
+    # number of retries, so the timeout is the 10 seconds times the retries.
+    # The retries are enough to keep trying for the whole 10 seconds.
+    @wait_timeout 10_000
+    @wait_retries 20
+
     @impl true
     def build(config) do
       cmd = [
@@ -261,7 +269,8 @@ defmodule EventSourcingDB.TestContainer do
         |> with_environment(:ESDB_API_TOKEN, config.api_token)
         |> with_waiting_strategy(
           HttpWaitStrategy.new("/api/v1/ping", config.port,
-            timeout: 10_000,
+            timeout: @wait_timeout * @wait_retries,
+            max_retries: @wait_retries,
             status_code: 200
           )
         )
