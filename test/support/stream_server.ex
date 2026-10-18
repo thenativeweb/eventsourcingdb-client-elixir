@@ -210,15 +210,14 @@ defmodule EventSourcingDBTest.StreamServer do
   defp content_length(header_lines) do
     Enum.find_value(header_lines, 0, fn line ->
       case String.split(line, ":", parts: 2) do
-        [name, value] ->
-          if String.downcase(name) == "content-length",
-            do: value |> String.trim() |> String.to_integer()
-
-        _other ->
-          nil
+        [name, value] -> content_length(String.downcase(name), value)
+        _other -> nil
       end
     end)
   end
+
+  defp content_length("content-length", value), do: value |> String.trim() |> String.to_integer()
+  defp content_length(_name, _value), do: nil
 
   defp receive_body(_socket, body, length) when byte_size(body) >= length, do: body
 
