@@ -11,6 +11,7 @@ defmodule EventSourcingDBTest.ApiV1 do
   }
 
   alias EventSourcingDB.ReadSubjectsOptions
+  alias EventSourcingDB.Transport.ApiVersion
   alias EventSourcingDB.Transport.HTTP
   alias EventSourcingDBTest.{FakeServer, StreamServer}
   import EventSourcingDBTest.Utils
@@ -123,9 +124,13 @@ defmodule EventSourcingDBTest.ApiV1 do
         end
       end
 
+      # The client knows the API already, so that the write itself fails to
+      # connect, rather than the probe before it.
       test "is that #{call} was not stored if the connection can not be established" do
-        assert {:error, %TransmissionError{reason: %{reason: :econnrefused}}} =
-                 run(@call, client(closed_url()))
+        client = client(closed_url())
+        :ok = ApiVersion.remember(client, :v1)
+
+        assert {:error, %TransmissionError{reason: %{reason: :econnrefused}}} = run(@call, client)
       end
 
       test "is unknown for #{call} if the connection breaks after it was established" do
