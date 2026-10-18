@@ -1,6 +1,5 @@
 defmodule EventSourcingDBTest.RegisterEventSchema do
   alias EventSourcingDB.ErrorCode
-  alias EventSourcingDB.Errors.DbApiError
   alias EventSourcingDB.TestContainer
   use ExUnit.Case, async: true
 
@@ -47,7 +46,11 @@ defmodule EventSourcingDBTest.RegisterEventSchema do
       client
       |> EventSourcingDB.register_event_schema("io.eventsourcingdb.test", %{"x" => "csie"})
 
-    assert {:error, %DbApiError{status: 400}} = result
+    assert_db_api_error(
+      result,
+      on_api(esdb, v1: 400, v2: 200),
+      on_api(esdb, v1: nil, v2: ErrorCode.event_schema_not_object())
+    )
   end
 
   test "fails to register a schema for an event type that has one already", %{esdb: esdb} do
@@ -58,7 +61,11 @@ defmodule EventSourcingDBTest.RegisterEventSchema do
 
     result = EventSourcingDB.register_event_schema(client, "io.eventsourcingdb.test", @schema)
 
-    assert_db_api_error(result, 409, ErrorCode.event_schema_already_registered())
+    assert_db_api_error(
+      result,
+      on_api(esdb, v1: 409, v2: 200),
+      ErrorCode.event_schema_already_registered()
+    )
   end
 
   test "fails to write an event that violates the schema of its type", %{esdb: esdb} do
@@ -72,6 +79,10 @@ defmodule EventSourcingDBTest.RegisterEventSchema do
         create_test_eventcandidate("/test", %{"id" => 42, "name" => "Jane Doe"})
       ])
 
-    assert_db_api_error(result, 409, ErrorCode.event_schema_violated())
+    assert_db_api_error(
+      result,
+      on_api(esdb, v1: 409, v2: 200),
+      ErrorCode.event_schema_violated()
+    )
   end
 end

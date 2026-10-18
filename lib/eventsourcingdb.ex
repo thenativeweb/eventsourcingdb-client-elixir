@@ -1,6 +1,10 @@
 defmodule EventSourcingDB do
   @moduledoc """
   `EventSourcingDB` client SDK.
+
+  The client SDK works with servers with and without the v2 API of EventSourcingDB. A client finds out which API its server offers on its first request, with a request for `/api/v2/system/ping`, and remembers the answer.
+
+  Over the v2 API, every read uses the HTTP method `QUERY` (RFC 10008), so a proxy in front of EventSourcingDB has to let it through. There is no fallback to `POST`.
   """
 
   alias EventSourcingDB.{
@@ -69,7 +73,7 @@ defmodule EventSourcingDB do
   """
   @spec ping(Client.t()) :: primitive_response()
   def ping(client) do
-    with_api(client, & &1.ping(client))
+    with_api(client, :ping, & &1.ping(client))
   end
 
   @doc """
@@ -228,6 +232,8 @@ defmodule EventSourcingDB do
   ```
 
   If something goes wrong while you enumerate the stream, the stream closes the connection and raises the corresponding error: an `EventSourcingDB.Errors.DbApiError` if EventSourcingDB reports an error, an `EventSourcingDB.Errors.ConnectionStalled` if nothing arrives for the stall timeout of the client (see `EventSourcingDB.Client`), an `EventSourcingDB.Errors.TransmissionError` if the connection fails, an `EventSourcingDB.Errors.InvalidResponseType` if the response contains an item of an unexpected type, or a `Jason.DecodeError` if the response is not valid JSON.
+
+  Servers with the v2 API report an error about the request itself, such as a malformed subject, within the stream as well, so the stream raises it once you enumerate it, while servers without the v2 API answer with the error right away.
 
   Like all functions that return a stream, `read_events` receives the response as messages sent to the calling process, so enumerate the stream in that process. While you do, the stream leaves the other messages of the process, such as the calls and casts of a GenServer, in its mailbox.
 
@@ -582,8 +588,11 @@ defmodule EventSourcingDB do
   #
 
   # Runs the call on the API that the client talks to the server through.
-  defp with_api(client, call) do
-    with {:ok, api} <- Transport.api(client), do: call.(api)
+  defp with_api(client, kind \\ :other, call) do
+    case Transport.api(client, kind) do
+      {:ok, api} -> call.(api)
+      {:error, reason} -> {:error, reason}
+    end
   end
 
   defp unwrap!({:ok, value}), do: value

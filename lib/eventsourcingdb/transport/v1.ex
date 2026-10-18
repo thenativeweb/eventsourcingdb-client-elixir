@@ -193,10 +193,10 @@ defmodule EventSourcingDB.Transport.V1 do
     )
   end
 
+  # The server sends a heartbeat every second while there is nothing else to
+  # send.
   @impl true
   def observe_events(client, subject, options) do
-    # The server sends a heartbeat every second while there is nothing else to
-    # send.
     stream(client, :observe_events, "/api/v1/observe-events", subject_body(subject, options),
       type: "event",
       process: &event/2,
@@ -245,12 +245,13 @@ defmodule EventSourcingDB.Transport.V1 do
     HTTP.stream(client, :post, path, body,
       decode: decoder(Keyword.fetch!(options, :type), Keyword.fetch!(options, :process)),
       heartbeats?: Keyword.fetch!(options, :heartbeats?),
+      ending: Keyword.get(options, :ending, :response),
       status_error: &status_error(operation, &1, &2)
     )
   end
 
   # Items of the v1 API carry their content as payload, and none ends a
-  # stream.
+  # stream, which the end of the response ends instead.
   defp decoder(expected_type, process) do
     fn
       %{"type" => ^expected_type, "payload" => payload}, line ->

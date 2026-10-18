@@ -14,6 +14,17 @@ defmodule EventSourcingDBTest.Essentials do
     assert EventSourcingDB.ping(TestContainer.get_client(esdb)) == :ok
   end
 
+  test "talks to the server through the API that it offers", %{esdb: esdb} do
+    client = TestContainer.get_client(esdb)
+
+    assert EventSourcingDB.Transport.api(client) ==
+             {:ok,
+              on_api(esdb,
+                v1: EventSourcingDB.Transport.V1,
+                v2: EventSourcingDB.Transport.V2
+              )}
+  end
+
   test "ping unavailable server" do
     client =
       Client.new(

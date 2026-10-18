@@ -64,8 +64,9 @@ defmodule EventSourcingDB.Transport.HTTP do
   #   * :decode - the decoder of the items
   #   * :heartbeats? - whether the server sends a heartbeat every second while
   #     it has nothing else to send
-  #   * :ends? - whether the server ends the stream with an end item, which it
-  #     then must not leave out
+  #   * :ending - how the server ends the stream: :response, if the end of the
+  #     response ends it, or :end_item, if an end item ends it, which the
+  #     server then must not leave out
   #   * :status_error - turns an answer with another status than 200, given as
   #     the response and the text of its body, into an error
   @spec stream(Client.t(), atom(), String.t(), term(), keyword()) ::
@@ -91,7 +92,7 @@ defmodule EventSourcingDB.Transport.HTTP do
           wait: wait,
           stall_timeout: stall_timeout,
           decode: Keyword.fetch!(options, :decode),
-          ends?: Keyword.get(options, :ends?, false),
+          ending: Keyword.fetch!(options, :ending),
           status: :open
         }
 
@@ -215,19 +216,16 @@ defmodule EventSourcingDB.Transport.HTTP do
     end
   end
 
-  # A stream whose server ends it with an end item fails if the response ends
+  # A stream that the server ends with an end item fails if the response ends
   # before that item, since the server then broke it off.
-  defp finish(%{status: :open, ends?: true} = state) do
-    %{state | status: {:failed, incomplete_stream_error()}}
-  end
-
-  defp finish(%{status: :open} = state), do: %{state | status: :ended}
+  defp finish(%{status: :open, ending: :response} = state), do: %{state | status: :ended}
+  defp finish(%{status: :open} = state), do: %{state | status: {:failed, broken_off_error()}}
   defp finish(state), do: state
 
   @doc false
-  @spec incomplete_stream_error() :: Exception.t()
-  def incomplete_stream_error() do
-    %TransmissionError{reason: %RuntimeError{message: "the stream ended without its end item"}}
+  @spec broken_off_error() :: Exception.t()
+  def broken_off_error() do
+    %TransmissionError{reason: %RuntimeError{message: "the server ended the stream unexpectedly"}}
   end
 
   # Splits the data at each newline into the lines it completes, the first of

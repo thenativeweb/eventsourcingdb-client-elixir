@@ -17,6 +17,25 @@ defmodule EventSourcingDBTest.Utils do
     end
   end
 
+  # The API that the server in the container offers, which the test finds out
+  # without the client SDK, so that it can expect what that API answers.
+  @spec server_api(Testcontainers.Container.t()) :: :v1 | :v2
+  def server_api(container) do
+    url = TestContainer.get_base_url(container) <> "api/v2/system/ping"
+
+    case Req.get!(url, retry: false, decode_body: false) do
+      %Req.Response{status: 200} -> :v2
+      %Req.Response{status: 404} -> :v1
+    end
+  end
+
+  # Returns what the test expects from the API that the server in the
+  # container offers, given as v1: and v2:.
+  @spec on_api(Testcontainers.Container.t(), keyword()) :: any()
+  def on_api(container, expectations) do
+    Keyword.fetch!(expectations, server_api(container))
+  end
+
   # Asserts that the result is a DbApiError with the given status and code,
   # whose description the server gave, without depending on its wording,
   # which differs between the versions of EventSourcingDB: the description

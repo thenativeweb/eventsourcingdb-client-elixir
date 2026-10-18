@@ -73,9 +73,13 @@ defmodule EventSourcingDBTest.WriteEvents do
         %IsSubjectPristine{subject: event_candidate.subject}
       ])
 
-    assert_db_api_error(written, 409, ErrorCode.precondition_violated(), "state conflict: ", [
-      "precondition"
-    ])
+    assert_db_api_error(
+      written,
+      on_api(esdb, v1: 409, v2: 200),
+      ErrorCode.precondition_violated(),
+      "",
+      ["precondition"]
+    )
   end
 
   test "write event with is subject populated condition on empty subject", %{esdb: esdb} do
@@ -88,9 +92,13 @@ defmodule EventSourcingDBTest.WriteEvents do
         %IsSubjectPopulated{subject: event_candidate.subject}
       ])
 
-    assert_db_api_error(written, 409, ErrorCode.precondition_violated(), "state conflict: ", [
-      "precondition"
-    ])
+    assert_db_api_error(
+      written,
+      on_api(esdb, v1: 409, v2: 200),
+      ErrorCode.precondition_violated(),
+      "",
+      ["precondition"]
+    )
   end
 
   test "write event with is subject populated condition on non-empty subject", %{esdb: esdb} do
@@ -150,9 +158,13 @@ defmodule EventSourcingDBTest.WriteEvents do
         %IsSubjectPristine{subject: fill_event_candidate.subject}
       ])
 
-    assert_db_api_error(written, 409, ErrorCode.precondition_violated(), "state conflict: ", [
-      "precondition"
-    ])
+    assert_db_api_error(
+      written,
+      on_api(esdb, v1: 409, v2: 200),
+      ErrorCode.precondition_violated(),
+      "",
+      ["precondition"]
+    )
   end
 
   test "write event with IsSubjectOnEventId condition on non-empty subject with correct id", %{
@@ -184,9 +196,13 @@ defmodule EventSourcingDBTest.WriteEvents do
         %IsSubjectOnEventId{subject: event_candidate.subject, event_id: "100"}
       ])
 
-    assert_db_api_error(written, 409, ErrorCode.precondition_violated(), "state conflict: ", [
-      "precondition"
-    ])
+    assert_db_api_error(
+      written,
+      on_api(esdb, v1: 409, v2: 200),
+      ErrorCode.precondition_violated(),
+      "",
+      ["precondition"]
+    )
   end
 
   test "write multiple events with IsSubjectOnEventId condition on empty subject", %{esdb: esdb} do
@@ -202,9 +218,13 @@ defmodule EventSourcingDBTest.WriteEvents do
         %IsSubjectOnEventId{subject: Enum.at(event_candidates, 0).subject, event_id: "100"}
       ])
 
-    assert_db_api_error(written, 409, ErrorCode.precondition_violated(), "state conflict: ", [
-      "precondition"
-    ])
+    assert_db_api_error(
+      written,
+      on_api(esdb, v1: 409, v2: 200),
+      ErrorCode.precondition_violated(),
+      "",
+      ["precondition"]
+    )
   end
 
   test "write multiple events with IsSubjectOnEventId condition on non-empty subject with correct id",
@@ -244,9 +264,13 @@ defmodule EventSourcingDBTest.WriteEvents do
         %IsSubjectOnEventId{subject: event_candidate.subject, event_id: "100"}
       ])
 
-    assert_db_api_error(written, 409, ErrorCode.precondition_violated(), "state conflict: ", [
-      "precondition"
-    ])
+    assert_db_api_error(
+      written,
+      on_api(esdb, v1: 409, v2: 200),
+      ErrorCode.precondition_violated(),
+      "",
+      ["precondition"]
+    )
   end
 
   test "write multiple events with IsEventQL condition", %{esdb: esdb} do

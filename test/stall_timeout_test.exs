@@ -14,6 +14,7 @@ defmodule EventSourcingDBTest.StallTimeout do
   alias EventSourcingDB.Errors.DbApiError
   alias EventSourcingDB.Errors.OutcomeUnknown
   alias EventSourcingDB.Errors.TransmissionError
+  alias EventSourcingDB.Transport.ApiVersion
   alias EventSourcingDBTest.StreamServer
   import EventSourcingDBTest.Utils
 
@@ -448,7 +449,10 @@ defmodule EventSourcingDBTest.StallTimeout do
   # the client SDK only ping is, as it is a GET request, three times after a
   # transient error such as a timeout, after about one, two, and four seconds,
   # which Req shortens by a random part of up to a tenth, and logs every
-  # retry.
+  # retry. Before the first ping, the client asks the server for its API with
+  # a GET request as well, which Req retries in the same way, so a ping to a
+  # server that stalls fails once the attempts to ask for the API are used
+  # up.
   @tag capture_log: true
   test "fails to ping after the stall timeout of each attempt that Req makes with its default retry" do
     base_url = start_silent_server()
@@ -462,10 +466,27 @@ defmodule EventSourcingDBTest.StallTimeout do
     assert elapsed >= 4 * @stall_timeout + 6_200
   end
 
+  # Before its first request, a client asks the server for its API with a GET
+  # request, which Req retries only before a ping, so that a write that stalls
+  # while it asks fails after a single attempt, and was not sent.
   @tag capture_log: true
-  test "fails to write events after the stall timeout of a single attempt, even with Req's default retry" do
+  test "fails to write events after the stall timeout of a single attempt to ask for the API, even with Req's default retry" do
     base_url = start_silent_server()
     client = Client.new(base_url: base_url, api_token: "secret", stall_timeout: @stall_timeout)
+
+    {result, elapsed} = measure(fn -> EventSourcingDB.write_events(client, [candidate()]) end)
+
+    assert {:error, %ConnectionStalled{}} = result
+    assert accepted_connections() == 1
+    assert elapsed >= @stall_timeout
+    assert elapsed < 2 * @stall_timeout
+  end
+
+  @tag capture_log: true
+  test "fails to write events with an unknown outcome after the stall timeout of a single attempt, even with Req's default retry" do
+    base_url = start_silent_server()
+    client = Client.new(base_url: base_url, api_token: "secret", stall_timeout: @stall_timeout)
+    :ok = ApiVersion.remember(client, :v1)
 
     {result, elapsed} = measure(fn -> EventSourcingDB.write_events(client, [candidate()]) end)
 

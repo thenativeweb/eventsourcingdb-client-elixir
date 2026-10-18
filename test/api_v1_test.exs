@@ -187,6 +187,20 @@ defmodule EventSourcingDBTest.ApiV1 do
     end
   end
 
+  describe "reading finite streams" do
+    test "ends a stream at the end of the response, since the v1 API sends no end item" do
+      client = serve_subjects(["/"])
+
+      {result, _elapsed} =
+        StreamServer.run_with_guard(fn ->
+          EventSourcingDB.read_subjects!(client, "/", %ReadSubjectsOptions{recursive: true})
+          |> Enum.to_list()
+        end)
+
+      assert result == {:ok, ["/"]}
+    end
+  end
+
   describe "reading subjects" do
     test "reads recursively from the subject, and keeps the subject alone if it does not read recursively" do
       client = serve_subjects(["/books", "/books/42", "/books/42/pages", "/books/43"])

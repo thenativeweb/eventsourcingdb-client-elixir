@@ -15,7 +15,12 @@ defmodule EventSourcingDBTest.ReadEventType do
 
     result = EventSourcingDB.read_event_type(client, "non.existent.eventType")
 
-    assert_db_api_error(result, 404, ErrorCode.event_type_unknown(), "event type ")
+    assert_db_api_error(
+      result,
+      on_api(esdb, v1: 404, v2: 200),
+      ErrorCode.event_type_unknown(),
+      "event type "
+    )
   end
 
   test "fails if the event type is malformed", %{esdb: esdb} do
@@ -23,7 +28,13 @@ defmodule EventSourcingDBTest.ReadEventType do
 
     result = EventSourcingDB.read_event_type(client, "malformed.eventType.")
 
-    assert_db_api_error(result, 400, nil, "", ["event type"])
+    assert_db_api_error(
+      result,
+      on_api(esdb, v1: 400, v2: 200),
+      on_api(esdb, v1: nil, v2: ErrorCode.event_type_malformed()),
+      "",
+      ["event type"]
+    )
   end
 
   test "read an existing event type", %{esdb: esdb} do

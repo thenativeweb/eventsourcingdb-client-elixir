@@ -1,6 +1,7 @@
 defmodule EventSourcingDBTest.StreamServer do
   @moduledoc false
   alias EventSourcingDB.Client
+  alias EventSourcingDB.Transport.ApiVersion
 
   # A local HTTP server that stands in for EventSourcingDB in tests that need
   # control over the timing of a stream. It accepts a single request and hands
@@ -16,6 +17,9 @@ defmodule EventSourcingDBTest.StreamServer do
   #
   # The client waits for the server for the stall timeout given as the
   # stall_timeout option, or for the default of the client without it.
+  #
+  # The server answers a single request, so the client does not ask it for
+  # its API, but takes the API from the api option, :v1 by default, or :v2.
 
   @response_headers [
     {"server", "EventSourcingDB/test"},
@@ -56,6 +60,8 @@ defmodule EventSourcingDBTest.StreamServer do
             [base_url: base_url, api_token: "secret", req_options: req_options] ++
               client_options
           )
+
+        :ok = ApiVersion.remember(client, Keyword.get(options, :api, :v1))
 
         if protocol == :http2 do
           ExUnit.Callbacks.on_exit(fn -> stop_pool(client) end)
