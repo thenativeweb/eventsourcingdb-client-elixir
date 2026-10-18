@@ -22,8 +22,9 @@ defmodule EventSourcingDB.Client do
 
     - `:req_options` - Any additional options for [`Req`](https://hexdocs.pm/req)
 
-    - `:stall_timeout` - How many milliseconds a request waits for the server without anything arriving before it fails, while connecting, while waiting for the response headers, or while waiting for the rest of the response, 30 seconds by default. Without it, requests other than observing events and running EventQL queries wait for the `receive_timeout` of the `req_options` instead, if there is one
+    - `:stall_timeout` - How many milliseconds a request waits for the server without anything arriving before it fails, while connecting, while waiting for the response headers, or while waiting for the rest of the response, 30 seconds by default. Without it, requests whose answers carry no heartbeats wait for the `receive_timeout` of the `req_options` instead, if there is one
 
+    Creating a client makes no request. On the first request to a server, the client SDK finds out whether the server offers the v2 API, and remembers the answer for every client of the same `base_url`.
     """
     field :api_token, String.t(), enforce: true
     field :base_url, String.t() | URI.t(), enforce: true

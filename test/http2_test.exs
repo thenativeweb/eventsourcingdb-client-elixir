@@ -1,9 +1,7 @@
 defmodule EventSourcingDBTest.HTTP2 do
-  alias EventSourcingDB.Errors.ApiError
-  alias EventSourcingDB.Errors.DBError
-  alias EventSourcingDB.Errors.HeartbeatTimeout
+  alias EventSourcingDB.Errors.ConnectionStalled
+  alias EventSourcingDB.Errors.DbApiError
   alias EventSourcingDB.Errors.InvalidServerHeader
-  alias EventSourcingDB.Errors.TransmissionError
   alias EventSourcingDB.Event
   alias EventSourcingDBTest.StreamServer
 
@@ -134,7 +132,7 @@ defmodule EventSourcingDBTest.HTTP2 do
     assert result == {:ok, [expected_event("0")]}
   end
 
-  test "ends observing events over HTTP/2 with a heartbeat timeout if nothing arrives" do
+  test "ends observing events over HTTP/2 as a stalled connection if nothing arrives" do
     client =
       start_server(
         fn connection ->
@@ -149,13 +147,13 @@ defmodule EventSourcingDBTest.HTTP2 do
         EventSourcingDB.observe_events!(client, "/test") |> Enum.to_list()
       end)
 
-    assert match?({:raised, %HeartbeatTimeout{}}, result)
+    assert match?({:raised, %ConnectionStalled{}}, result)
     assert elapsed >= @stall_timeout
     assert elapsed < 2 * @stall_timeout
     assert_receive {:stream_server, :closed}, 1_000
   end
 
-  test "ends reading events over HTTP/2 with a transmission error if nothing arrives" do
+  test "ends reading events over HTTP/2 as a stalled connection if nothing arrives" do
     client =
       start_server(
         fn connection ->
@@ -171,7 +169,7 @@ defmodule EventSourcingDBTest.HTTP2 do
         EventSourcingDB.read_events!(client, "/test") |> Enum.to_list()
       end)
 
-    assert match?({:raised, %TransmissionError{}}, result)
+    assert match?({:raised, %ConnectionStalled{}}, result)
     assert elapsed >= @client_receive_timeout
     assert elapsed < 2 * @client_receive_timeout
     assert_receive {:stream_server, :closed}, 1_000
@@ -185,7 +183,7 @@ defmodule EventSourcingDBTest.HTTP2 do
         EventSourcingDB.observe_events(client, "/test")
       end)
 
-    assert match?({:ok, {:error, %TransmissionError{}}}, result)
+    assert match?({:ok, {:error, %ConnectionStalled{}}}, result)
     assert elapsed >= @stall_timeout
     assert elapsed < 2 * @stall_timeout
     assert_receive {:stream_server, :closed}, 1_000
@@ -211,7 +209,7 @@ defmodule EventSourcingDBTest.HTTP2 do
         EventSourcingDB.observe_events!(client, "/test") |> Enum.to_list()
       end)
 
-    assert result == {:raised, %DBError{payload: %{"error" => "something went wrong"}}}
+    assert result == {:raised, %DbApiError{description: "something went wrong", status: 200}}
     assert_receive {:stream_server, :closed}, 1_000
   end
 
@@ -272,7 +270,8 @@ defmodule EventSourcingDBTest.HTTP2 do
         {result, mailbox()}
       end)
 
-    assert result == {:ok, {{:error, %ApiError{reason: "malformed subject\n"}}, []}}
+    assert result ==
+             {:ok, {{:error, %DbApiError{status: 400, description: "malformed subject\n"}}, []}}
   end
 
   test "fails to observe events over HTTP/2 from a server that is not EventSourcingDB, and closes the stream" do

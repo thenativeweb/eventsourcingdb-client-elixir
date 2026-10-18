@@ -36,13 +36,13 @@ defmodule EventSourcingDBTest.ReadEventTypes do
     assert result ==
              [
                %EventType{
-                 event_type: "io.eventsourcingdb.test.bar",
-                 is_phantom: false,
+                 type: "io.eventsourcingdb.test.bar",
+                 has_events: true,
                  schema: nil
                },
                %EventType{
-                 event_type: "io.eventsourcingdb.test.foo",
-                 is_phantom: false,
+                 type: "io.eventsourcingdb.test.foo",
+                 has_events: true,
                  schema: nil
                }
              ]
@@ -71,8 +71,8 @@ defmodule EventSourcingDBTest.ReadEventTypes do
     assert result ==
              [
                %EventType{
-                 event_type: "io.eventsourcingdb.test",
-                 is_phantom: true,
+                 type: "io.eventsourcingdb.test",
+                 has_events: false,
                  schema: schema
                }
              ]

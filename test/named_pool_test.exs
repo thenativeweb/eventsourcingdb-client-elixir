@@ -1,6 +1,5 @@
 defmodule EventSourcingDBTest.NamedPool do
-  alias EventSourcingDB.Errors.HeartbeatTimeout
-  alias EventSourcingDB.Errors.TransmissionError
+  alias EventSourcingDB.Errors.ConnectionStalled
   alias EventSourcingDB.Event
   alias EventSourcingDBTest.StreamServer
 
@@ -91,7 +90,7 @@ defmodule EventSourcingDBTest.NamedPool do
       assert_receive {:stream_server, :closed}, 1_000
     end
 
-    test "ends observing events with a heartbeat timeout if nothing arrives" do
+    test "ends observing events as a stalled connection if nothing arrives" do
       client =
         start_server(
           fn socket ->
@@ -106,13 +105,13 @@ defmodule EventSourcingDBTest.NamedPool do
           EventSourcingDB.observe_events!(client, "/test") |> Enum.to_list()
         end)
 
-      assert match?({:raised, %HeartbeatTimeout{}}, result)
+      assert match?({:raised, %ConnectionStalled{}}, result)
       assert elapsed >= @stall_timeout
       assert elapsed < 2 * @stall_timeout
       assert_receive {:stream_server, :closed}, 1_000
     end
 
-    test "ends reading events with a transmission error if nothing arrives" do
+    test "ends reading events as a stalled connection if nothing arrives" do
       client =
         start_server(
           fn socket ->
@@ -130,7 +129,7 @@ defmodule EventSourcingDBTest.NamedPool do
           EventSourcingDB.read_events!(client, "/test") |> Enum.to_list()
         end)
 
-      assert match?({:raised, %TransmissionError{}}, result)
+      assert match?({:raised, %ConnectionStalled{}}, result)
       assert elapsed >= @client_receive_timeout
       assert elapsed < 2 * @client_receive_timeout
       assert_receive {:stream_server, :closed}, 1_000
@@ -147,7 +146,7 @@ defmodule EventSourcingDBTest.NamedPool do
           EventSourcingDB.observe_events(client, "/test")
         end)
 
-      assert match?({:ok, {:error, %TransmissionError{}}}, result)
+      assert match?({:ok, {:error, %ConnectionStalled{}}}, result)
       assert elapsed >= @stall_timeout
       assert elapsed < 2 * @stall_timeout
       assert_receive {:stream_server, :closed}, 1_000

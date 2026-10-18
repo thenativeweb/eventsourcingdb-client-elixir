@@ -29,7 +29,8 @@ defmodule EventSourcingDB.MixProject do
   # Run "mix help compile.app" to learn about applications.
   def application do
     [
-      extra_applications: [:logger]
+      extra_applications: [:logger],
+      mod: {EventSourcingDB.Application, []}
     ]
   end
 
@@ -73,7 +74,8 @@ defmodule EventSourcingDB.MixProject do
           EventSourcingDB.ObserveEventsOptions,
           EventSourcingDB.ObserveFromLatestEventOptions,
           EventSourcingDB.ReadEventsOptions,
-          EventSourcingDB.ReadFromLatestEventOptions
+          EventSourcingDB.ReadFromLatestEventOptions,
+          EventSourcingDB.ReadSubjectsOptions
         ],
         Testing: [
           EventSourcingDB.TestContainer
@@ -88,6 +90,7 @@ defmodule EventSourcingDB.MixProject do
       {:req, "~> 0.7.2"},
       {:finch, "~> 0.24"},
       {:jason, "~> 1.2"},
+      {:telemetry, "~> 1.0"},
       {:jose, "~> 1.11"},
       {:ex_json_schema, "~> 0.11.2"},
       {:typedstruct, "~> 0.5"},

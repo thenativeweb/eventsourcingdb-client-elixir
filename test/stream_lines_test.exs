@@ -1,5 +1,5 @@
 defmodule EventSourcingDBTest.StreamLines do
-  alias EventSourcingDB.Errors.DBError
+  alias EventSourcingDB.Errors.DbApiError
   alias EventSourcingDB.Event
   alias EventSourcingDBTest.StreamServer
   use ExUnit.Case, async: true
@@ -179,7 +179,10 @@ defmodule EventSourcingDBTest.StreamLines do
         end
       end)
 
-    assert result == {:ok, {%DBError{payload: @error["payload"]}, [{:read, "0"}]}}
+    assert result ==
+             {:ok,
+              {%DbApiError{description: @error["payload"]["error"], status: 200}, [{:read, "0"}]}}
+
     assert_receive {:stream_server, :closed}, 1_000
   end
 

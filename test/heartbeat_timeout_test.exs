@@ -1,6 +1,5 @@
 defmodule EventSourcingDBTest.HeartbeatTimeout do
-  alias EventSourcingDB.Errors.HeartbeatTimeout
-  alias EventSourcingDB.Errors.TransmissionError
+  alias EventSourcingDB.Errors.ConnectionStalled
   alias EventSourcingDB.Event
   alias EventSourcingDBTest.StreamServer
 
@@ -13,7 +12,7 @@ defmodule EventSourcingDBTest.HeartbeatTimeout do
 
   @heartbeat %{"type" => "heartbeat", "payload" => %{}}
 
-  test "ends observing events with a heartbeat timeout if nothing arrives" do
+  test "ends observing events as a stalled connection if nothing arrives" do
     client =
       start_server(fn socket ->
         StreamServer.send_head(socket)
@@ -25,13 +24,13 @@ defmodule EventSourcingDBTest.HeartbeatTimeout do
         EventSourcingDB.observe_events!(client, "/test") |> Enum.to_list()
       end)
 
-    assert match?({:raised, %HeartbeatTimeout{}}, result)
+    assert match?({:raised, %ConnectionStalled{}}, result)
     assert elapsed >= @stall_timeout
     assert elapsed < 2 * @stall_timeout
     assert_receive {:stream_server, :closed}, 1_000
   end
 
-  test "ends running an EventQL query with a heartbeat timeout if nothing arrives" do
+  test "ends running an EventQL query as a stalled connection if nothing arrives" do
     client =
       start_server(fn socket ->
         StreamServer.send_head(socket)
@@ -44,13 +43,13 @@ defmodule EventSourcingDBTest.HeartbeatTimeout do
         |> Enum.to_list()
       end)
 
-    assert match?({:raised, %HeartbeatTimeout{}}, result)
+    assert match?({:raised, %ConnectionStalled{}}, result)
     assert elapsed >= @stall_timeout
     assert elapsed < 2 * @stall_timeout
     assert_receive {:stream_server, :closed}, 1_000
   end
 
-  test "ends observing events with a heartbeat timeout even if other messages arrive" do
+  test "ends observing events as a stalled connection even if other messages arrive" do
     client =
       start_server(fn socket ->
         StreamServer.send_head(socket)
@@ -71,7 +70,7 @@ defmodule EventSourcingDBTest.HeartbeatTimeout do
         EventSourcingDB.observe_events!(client, "/test") |> Enum.to_list()
       end)
 
-    assert match?({:raised, %HeartbeatTimeout{}}, result)
+    assert match?({:raised, %ConnectionStalled{}}, result)
     assert elapsed >= @stall_timeout
     assert elapsed < 2 * @stall_timeout
     assert_receive {:stream_server, :closed}, 1_000
@@ -100,7 +99,7 @@ defmodule EventSourcingDBTest.HeartbeatTimeout do
     assert elapsed >= 2 * @stall_timeout
   end
 
-  test "ends observing events with a heartbeat timeout once parts of a line stop arriving" do
+  test "ends observing events as a stalled connection once parts of a line stop arriving" do
     line = Jason.encode!(event_line("0")) <> "\n"
     parts = 2 * div(@stall_timeout, @heartbeat_interval)
 
@@ -119,7 +118,7 @@ defmodule EventSourcingDBTest.HeartbeatTimeout do
         EventSourcingDB.observe_events!(client, "/test") |> Enum.to_list()
       end)
 
-    assert match?({:raised, %HeartbeatTimeout{}}, result)
+    assert match?({:raised, %ConnectionStalled{}}, result)
     assert elapsed >= 3 * @stall_timeout
     assert elapsed < 4 * @stall_timeout
     assert_receive {:stream_server, :closed}, 1_000
@@ -160,7 +159,7 @@ defmodule EventSourcingDBTest.HeartbeatTimeout do
     assert elapsed >= 3 * @stall_timeout
   end
 
-  test "delivers events that arrive within the heartbeat timeout" do
+  test "delivers events that arrive within the stall timeout" do
     client =
       start_server(fn socket ->
         StreamServer.send_head(socket)
@@ -178,7 +177,7 @@ defmodule EventSourcingDBTest.HeartbeatTimeout do
     assert result == {:ok, [expected_event("0"), expected_event("1")]}
   end
 
-  test "delivers rows that arrive within the heartbeat timeout" do
+  test "delivers rows that arrive within the stall timeout" do
     client =
       start_server(fn socket ->
         StreamServer.send_head(socket)
@@ -197,7 +196,7 @@ defmodule EventSourcingDBTest.HeartbeatTimeout do
     assert result == {:ok, [1, 2]}
   end
 
-  test "ends observing events without a heartbeat timeout if the caller stops reading" do
+  test "ends observing events without a stalled connection if the caller stops reading" do
     client =
       start_server(fn socket ->
         StreamServer.send_head(socket)
@@ -215,7 +214,7 @@ defmodule EventSourcingDBTest.HeartbeatTimeout do
     assert_receive {:stream_server, :closed}, 1_000
   end
 
-  test "ends reading events with a transmission error if nothing arrives for the stall timeout" do
+  test "ends reading events as a stalled connection if nothing arrives for the stall timeout" do
     client =
       start_server(fn socket ->
         StreamServer.send_head(socket)
@@ -227,7 +226,7 @@ defmodule EventSourcingDBTest.HeartbeatTimeout do
         EventSourcingDB.read_events!(client, "/test") |> Enum.to_list()
       end)
 
-    assert {:raised, %TransmissionError{reason: %{reason: :timeout}}} = result
+    assert {:raised, %ConnectionStalled{}} = result
     assert elapsed >= @stall_timeout
     assert elapsed < 2 * @stall_timeout
     assert_receive {:stream_server, :closed}, 1_000
@@ -261,15 +260,14 @@ defmodule EventSourcingDBTest.HeartbeatTimeout do
         EventSourcingDB.observe_events(client, "/test")
       end)
 
-    assert result ==
-             {:ok, {:error, %TransmissionError{reason: %Req.TransportError{reason: :timeout}}}}
+    assert result == {:ok, {:error, ConnectionStalled.new(@stall_timeout)}}
 
     assert elapsed >= @stall_timeout
     assert elapsed < 2 * @stall_timeout
     assert_receive {:stream_server, :closed}, 1_000
   end
 
-  test "names the stall timeout in the heartbeat timeout" do
+  test "names the stall timeout in the error of a stalled connection" do
     client =
       start_server(fn socket ->
         StreamServer.send_head(socket)
@@ -282,7 +280,7 @@ defmodule EventSourcingDBTest.HeartbeatTimeout do
       end)
 
     assert Exception.message(error) ==
-             "Heartbeat Timeout: No event and no heartbeat arrived for 500 milliseconds."
+             "Connection stalled: nothing arrived from the server for 500 milliseconds."
   end
 
   # Every client of these tests waits for the server for the stall timeout.

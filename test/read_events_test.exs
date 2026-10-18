@@ -1,4 +1,6 @@
 defmodule EventSourcingDBTest.ReadEvents do
+  alias EventSourcingDB.ErrorCode
+  alias EventSourcingDB.Errors.DbApiError
   alias EventSourcingDB.Errors.TransmissionError
   alias EventSourcingDB.Client
   alias EventSourcingDB.ReadFromLatestEventOptions
@@ -34,13 +36,24 @@ defmodule EventSourcingDBTest.ReadEvents do
   end
 
   test "read with malformed subject", %{esdb: esdb} do
-    client = client_reporting_status(esdb)
+    client = TestContainer.get_client(esdb)
 
     result = EventSourcingDB.read_events(client, "malformed")
-    {:messages, messages} = Process.info(self(), :messages)
 
-    assert_api_error(result, "", ["subject", "malformed"])
-    assert messages == [{:status, 400}]
+    # The v2 API reports the error within the stream, at status 200.
+    case server_api(esdb) do
+      :v1 ->
+        assert_db_api_error(result, 400, nil, "", ["subject", "malformed"])
+
+      :v2 ->
+        assert {:ok, events} = result
+        error = assert_raise DbApiError, fn -> Enum.to_list(events) end
+
+        assert_db_api_error({:error, error}, 200, ErrorCode.subject_malformed(), "", [
+          "subject",
+          "malformed"
+        ])
+    end
   end
 
   test "make read call with event", %{esdb: esdb} do

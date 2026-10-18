@@ -1,9 +1,9 @@
 defmodule EventSourcingDBTest.StreamErrors do
-  alias EventSourcingDB.Errors.ApiError
-  alias EventSourcingDB.Errors.DBError
+  alias EventSourcingDB.Errors.DbApiError
   alias EventSourcingDB.Errors.InvalidResponseType
   alias EventSourcingDB.Errors.InvalidServerHeader
   alias EventSourcingDB.Errors.TransmissionError
+  alias EventSourcingDB.ReadSubjectsOptions
   alias EventSourcingDBTest.StreamServer
   use ExUnit.Case, async: true
 
@@ -23,7 +23,7 @@ defmodule EventSourcingDBTest.StreamErrors do
         EventSourcingDB.read_events!(client, "/test") |> Enum.to_list()
       end)
 
-    assert result == {:raised, %DBError{payload: @error["payload"]}}
+    assert result == {:raised, %DbApiError{description: "something went wrong", status: 200}}
     assert_receive {:stream_server, :closed}, 1_000
   end
 
@@ -40,7 +40,7 @@ defmodule EventSourcingDBTest.StreamErrors do
         EventSourcingDB.observe_events!(client, "/test") |> Enum.to_list()
       end)
 
-    assert result == {:raised, %DBError{payload: @error["payload"]}}
+    assert result == {:raised, %DbApiError{description: "something went wrong", status: 200}}
     assert_receive {:stream_server, :closed}, 1_000
   end
 
@@ -60,7 +60,7 @@ defmodule EventSourcingDBTest.StreamErrors do
         Enum.to_list(rows)
       end)
 
-    assert result == {:raised, %DBError{payload: @error["payload"]}}
+    assert result == {:raised, %DbApiError{description: "something went wrong", status: 200}}
     assert_receive {:stream_server, :closed}, 1_000
   end
 
@@ -74,7 +74,8 @@ defmodule EventSourcingDBTest.StreamErrors do
 
     {result, _elapsed} =
       StreamServer.run_with_guard(fn ->
-        EventSourcingDB.read_subjects!(client, "/") |> Enum.to_list()
+        EventSourcingDB.read_subjects!(client, "/", %ReadSubjectsOptions{recursive: true})
+        |> Enum.to_list()
       end)
 
     assert match?({:raised, %Jason.DecodeError{}}, result)
@@ -135,7 +136,8 @@ defmodule EventSourcingDBTest.StreamErrors do
         {result, mailbox()}
       end)
 
-    assert result == {:ok, {{:error, %ApiError{reason: "malformed subject\n"}}, []}}
+    assert result ==
+             {:ok, {{:error, %DbApiError{status: 400, description: "malformed subject\n"}}, []}}
   end
 
   test "fails to observe events from a server that is not EventSourcingDB, and closes the connection" do

@@ -1,4 +1,5 @@
 defmodule EventSourcingDBTest.ReadEventType do
+  alias EventSourcingDB.ErrorCode
   alias EventSourcingDB.EventCandidate
   alias EventSourcingDB.EventType
   alias EventSourcingDB.TestContainer
@@ -10,21 +11,30 @@ defmodule EventSourcingDBTest.ReadEventType do
   container(:esdb, test_container())
 
   test "fails if the event type does not exist", %{esdb: esdb} do
-    client = client_reporting_status(esdb)
+    client = TestContainer.get_client(esdb)
 
     result = EventSourcingDB.read_event_type(client, "non.existent.eventType")
 
-    assert_api_error(result, "event type ")
-    assert_received {:status, 404}
+    assert_db_api_error(
+      result,
+      on_api(esdb, v1: 404, v2: 200),
+      ErrorCode.event_type_unknown(),
+      "event type "
+    )
   end
 
   test "fails if the event type is malformed", %{esdb: esdb} do
-    client = client_reporting_status(esdb)
+    client = TestContainer.get_client(esdb)
 
     result = EventSourcingDB.read_event_type(client, "malformed.eventType.")
 
-    assert_api_error(result, "", ["event type"])
-    assert_received {:status, 400}
+    assert_db_api_error(
+      result,
+      on_api(esdb, v1: 400, v2: 200),
+      on_api(esdb, v1: nil, v2: ErrorCode.event_type_malformed()),
+      "",
+      ["event type"]
+    )
   end
 
   test "read an existing event type", %{esdb: esdb} do
@@ -44,7 +54,7 @@ defmodule EventSourcingDBTest.ReadEventType do
     result = EventSourcingDB.read_event_type!(client, "io.eventsourcingdb.test.foo")
 
     assert match?(
-             %EventType{event_type: "io.eventsourcingdb.test.foo", is_phantom: false},
+             %EventType{type: "io.eventsourcingdb.test.foo", has_events: true},
              result
            )
   end

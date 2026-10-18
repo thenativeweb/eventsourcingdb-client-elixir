@@ -1,6 +1,6 @@
 defmodule EventSourcingDBTest.Utils do
   @moduledoc false
-  alias EventSourcingDB.Errors.ApiError
+  alias EventSourcingDB.Errors.DbApiError
   alias EventSourcingDB.Event
   alias EventSourcingDB.EventCandidate
   alias EventSourcingDB.TestContainer
@@ -17,46 +17,49 @@ defmodule EventSourcingDBTest.Utils do
     end
   end
 
-  # Returns the client of the container, which sends the status code of every
-  # response to the calling process as {:status, status}, so that a test can
-  # check it, too.
-  @spec client_reporting_status(struct()) :: EventSourcingDB.Client.t()
-  def client_reporting_status(container) do
-    test_process = self()
+  # The API that the server in the container offers, which the test finds out
+  # without the client SDK, so that it can expect what that API answers.
+  @spec server_api(Testcontainers.Container.t()) :: :v1 | :v2
+  def server_api(container) do
+    url = TestContainer.get_base_url(container) <> "api/v2/system/ping"
 
-    report_status = fn req ->
-      Req.Request.append_response_steps(req,
-        report_status: fn {request, response} ->
-          send(test_process, {:status, response.status})
-          {request, response}
-        end
-      )
+    case Req.get!(url, retry: false, decode_body: false) do
+      %Req.Response{status: 200} -> :v2
+      %Req.Response{status: 404} -> :v1
     end
-
-    client = TestContainer.get_client(container)
-    %{client | req_options: client.req_options ++ [plugins: [report_status]]}
   end
 
-  # Asserts that the result is an ApiError whose reason the server gave, without
-  # depending on its wording, which EventSourcingDB 1.3 changes: the reason
-  # starts with the given prefix, contains each of the given parts, and ends
-  # with a newline, and the error names it in the SDK's own format.
-  @spec assert_api_error(any(), String.t(), [String.t()]) :: any()
-  def assert_api_error(result, prefix, parts \\ []) do
-    assert {:error, %ApiError{reason: reason} = error} = result
-    assert is_binary(reason)
+  # Returns what the test expects from the API that the server in the
+  # container offers, given as v1: and v2:.
+  @spec on_api(Testcontainers.Container.t(), keyword()) :: any()
+  def on_api(container, expectations) do
+    Keyword.fetch!(expectations, server_api(container))
+  end
 
-    assert String.starts_with?(reason, prefix),
-           "#{inspect(reason)} does not start with #{inspect(prefix)}"
+  # Asserts that the result is a DbApiError with the given status and code,
+  # whose description the server gave, without depending on its wording,
+  # which differs between the versions of EventSourcingDB: the description
+  # starts with the given prefix and contains each of the given parts, and the
+  # error names it in the SDK's own format.
+  @spec assert_db_api_error(any(), pos_integer(), String.t() | nil, String.t(), [String.t()]) ::
+          DbApiError.t()
+  def assert_db_api_error(result, status, code, prefix \\ "", parts \\ []) do
+    assert {:error, %DbApiError{description: description} = error} = result
+    assert error.status == status
+    assert error.code == code
+    assert is_binary(description)
 
-    assert String.ends_with?(reason, "\n")
+    assert String.starts_with?(description, prefix),
+           "#{inspect(description)} does not start with #{inspect(prefix)}"
 
     for part <- parts do
-      assert String.contains?(reason, part),
-             "#{inspect(reason)} does not contain #{inspect(part)}"
+      assert String.contains?(description, part),
+             "#{inspect(description)} does not contain #{inspect(part)}"
     end
 
-    assert Exception.message(error) == "API Error: #{reason}"
+    assert Exception.message(error) =~ String.trim_trailing(description)
+
+    error
   end
 
   @spec create_test_eventcandidate(String.t(), map()) :: EventCandidate.t()
