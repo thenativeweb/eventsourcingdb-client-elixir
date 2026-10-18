@@ -50,6 +50,18 @@ defmodule EventSourcingDBTest.WriteOutcome do
     assert {:error, %ConnectionStalled{}} = write(:write_events, client)
   end
 
+  # Over the v2 API, the write runs in the relay, whose wait for the answer
+  # ends a moment after the connect timeout, which equals the stall timeout
+  # by default, so that the relay can tell that the write was not sent.
+  test "a write over the v2 API was not stored if connecting times out after the stall timeout" do
+    client =
+      Client.new(base_url: unresponsive_url(), api_token: "secret", stall_timeout: 1_000)
+
+    :ok = ApiVersion.remember(client, :v2)
+
+    assert {:error, %ConnectionStalled{}} = write(:write_events, client)
+  end
+
   # Without Finch, nothing tells when a failure happened, so only the reason
   # is known, which a connection that was established may fail with as well.
   for reason <- [:ehostunreach, :enetunreach, {:tls_alert, {:bad_record_mac, ~c"alert"}}] do
