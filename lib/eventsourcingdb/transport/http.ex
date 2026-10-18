@@ -6,6 +6,7 @@ defmodule EventSourcingDB.Transport.HTTP do
   # lines, each bounded by the stall timeout of the client.
 
   alias EventSourcingDB.Client
+  alias EventSourcingDB.Transport.RequestPhase
 
   alias EventSourcingDB.Errors.{
     ConnectionStalled,
@@ -38,6 +39,10 @@ defmodule EventSourcingDB.Transport.HTTP do
   # connect timeout (see build_request/5). The body is not decoded, so that
   # each API decodes it as it needs, for example events with the text of their
   # data as it arrived, for verifying their hash.
+  #
+  # With the option track_sending: true, a request that failed before it was
+  # sent fails with {:not_sent, reason}, so that a write can tell that it was
+  # not stored (see EventSourcingDB.Transport.RequestPhase).
   @spec one_shot(Client.t(), atom(), String.t(), term(), keyword()) ::
           {:ok, Req.Response.t()} | {:error, Exception.t()}
   def one_shot(client, method, path, body, options \\ []) do
@@ -53,14 +58,34 @@ defmodule EventSourcingDB.Transport.HTTP do
   @spec unchecked_one_shot(Client.t(), atom(), String.t(), term(), keyword()) ::
           {:ok, Req.Response.t()} | {:error, Exception.t()}
   def unchecked_one_shot(client, method, path, body, options \\ []) do
+    {track_sending?, options} = Keyword.pop(options, :track_sending, false)
     req = build_request(client, method, path, body, options)
     timeout = receive_timeout(client, req)
 
-    case Req.request(req, receive_timeout: timeout, decode_body: false) do
-      {:ok, response} -> {:ok, response}
-      {:error, reason} -> {:error, transport_error(reason, timeout)}
+    case RequestPhase.track(fn ->
+           Req.request(req, receive_timeout: timeout, decode_body: false)
+         end) do
+      {{:ok, response}, _phase} -> {:ok, response}
+      {{:error, reason}, phase} -> failure(reason, timeout, phase, track_sending?)
     end
   end
+
+  # A failure of the transport, which is a stall if it is a timeout, and,
+  # should the caller ask for it, tells whether the request was not sent at
+  # all: if Finch saw its connection fail, or the HTTP/2 pool refused it for a
+  # connection it does not have.
+  defp failure(reason, timeout, phase, track_sending?) do
+    error = transport_error(reason, timeout)
+
+    if track_sending? and (phase == :not_sent or refused_by_http2_pool?(reason)),
+      do: {:error, {:not_sent, error}},
+      else: {:error, error}
+  end
+
+  defp refused_by_http2_pool?(%Req.HTTPError{protocol: :http2, reason: reason}),
+    do: reason in [:disconnected, :connection_not_ready]
+
+  defp refused_by_http2_pool?(_reason), do: false
 
   #
   # region Streams
@@ -79,6 +104,8 @@ defmodule EventSourcingDB.Transport.HTTP do
   #     for observing events, so that the end of the response is a failure
   #   * :status_error - turns an answer with another status than 200, given as
   #     the response and the text of its body, into an error
+  #   * :track_sending - whether a stream that fails to open before it was
+  #     sent fails with {:not_sent, reason}, as for one_shot/5
   @spec stream(Client.t(), atom(), String.t(), term(), keyword()) ::
           {:ok, Enumerable.t()} | {:error, Exception.t()}
   def stream(client, method, path, body, options) do
@@ -89,7 +116,9 @@ defmodule EventSourcingDB.Transport.HTTP do
     stall_timeout =
       if heartbeats?, do: heartbeat_timeout(client), else: receive_timeout(client, req)
 
-    case open_stream(req, stall_timeout, heartbeats?, status_error) do
+    track_sending? = Keyword.get(options, :track_sending, false)
+
+    case open_stream(req, stall_timeout, heartbeats?, status_error, track_sending?) do
       {:ok, response, wait} ->
         # The resource receives the lines of the response, and keeps the start
         # of a line that has not arrived completely yet next to the response.
@@ -122,20 +151,20 @@ defmodule EventSourcingDB.Transport.HTTP do
   # with an error of its own, and it bounds each wait itself, in the relay, as
   # does every stream in a pool whose waits Finch does not bound one by one
   # (see finch_bounds_each_wait?/1).
-  defp open_stream(req, stall_timeout, heartbeats?, status_error) do
+  defp open_stream(req, stall_timeout, heartbeats?, status_error, track_sending?) do
     {response, wait} =
       if not heartbeats? and finch_bounds_each_wait?(req) do
-        {Req.request(req, into: :self, receive_timeout: stall_timeout), :infinity}
+        {{Req.request(req, into: :self, receive_timeout: stall_timeout), :maybe_sent}, :infinity}
       else
         {request_through_relay(req, stall_timeout), stall_timeout}
       end
 
     case response do
-      {:ok, response} ->
+      {{:ok, response}, _phase} ->
         validate_stream_response(response, stall_timeout, wait, status_error)
 
-      {:error, reason} ->
-        {:error, transport_error(reason, stall_timeout)}
+      {{:error, reason}, phase} ->
+        failure(reason, stall_timeout, phase, track_sending?)
     end
     |> case do
       {:ok, response} -> {:ok, response, wait}
@@ -402,20 +431,28 @@ defmodule EventSourcingDB.Transport.HTTP do
     monitor = Process.monitor(relay)
 
     receive do
-      {^relay, result} ->
+      {^relay, result, phase} ->
         Process.demonitor(monitor, [:flush])
-        relay_result(relay, result)
+        {relay_result(relay, result), phase}
 
       {:DOWN, ^monitor, :process, ^relay, reason} ->
         exit(reason)
     after
-      timeout ->
+      relay_wait(timeout) ->
         Process.unlink(relay)
         stop_relay(relay, monitor)
+        RequestPhase.forget(relay)
         discard_relay_result(relay)
-        {:error, %Req.TransportError{reason: :timeout}}
+        {{:error, %Req.TransportError{reason: :timeout}}, :maybe_sent}
     end
   end
+
+  # Connecting counts toward the stall timeout, so a connection that the
+  # server does not accept times out at the same moment as the wait for the
+  # response headers. The wait gives the relay a little longer, so that the
+  # relay can tell that the request was not sent.
+  defp relay_wait(:infinity), do: :infinity
+  defp relay_wait(timeout), do: timeout + min(250, div(timeout, 4))
 
   defp relay_result(relay, {:ok, response}) do
     {:ok, Req.Response.put_private(response, :relay, relay)}
@@ -439,16 +476,20 @@ defmodule EventSourcingDB.Transport.HTTP do
   # The relay may have sent its result just before it was stopped.
   defp discard_relay_result(relay) do
     receive do
-      {^relay, {:ok, response}} -> Req.cancel_async_response(response)
-      {^relay, _result} -> :ok
+      {^relay, {:ok, response}, _phase} -> Req.cancel_async_response(response)
+      {^relay, _result, _phase} -> :ok
     after
       0 -> :ok
     end
   end
 
+  # The relay tells the caller whether the request was sent at all, as Finch
+  # reports it from the process that it starts for the request, whose parent
+  # is the relay (see EventSourcingDB.Transport.RequestPhase).
   defp run_relay(caller, context, req) do
     take_over_process_context(context)
     monitor = Process.monitor(caller)
+    RequestPhase.start()
 
     result =
       try do
@@ -457,10 +498,13 @@ defmodule EventSourcingDB.Transport.HTTP do
         kind, reason -> {:raised, kind, reason, __STACKTRACE__}
       end
 
+    phase = RequestPhase.phase(self())
+    RequestPhase.forget(self())
+
     # From here on, the monitor watches the caller, and the link would only
     # leave an exit message for a caller that traps exits.
     Process.unlink(caller)
-    send(caller, {self(), result})
+    send(caller, {self(), result, phase})
 
     case result do
       {:ok, %Req.Response{body: %Req.Response.Async{}} = response} ->

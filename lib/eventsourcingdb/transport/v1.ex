@@ -46,7 +46,7 @@ defmodule EventSourcingDB.Transport.V1 do
     body = %{events: events, preconditions: preconditions}
 
     client
-    |> HTTP.one_shot(:post, "/api/v1/write-events", body)
+    |> HTTP.one_shot(:post, "/api/v1/write-events", body, track_sending: true)
     |> text_body(:write_events)
     |> then(fn result -> with {:ok, text} <- result, do: written_events(text) end)
     |> WriteOutcome.classify(:v1)
@@ -80,7 +80,9 @@ defmodule EventSourcingDB.Transport.V1 do
     body = %{eventType: event_type, schema: schema}
 
     client
-    |> request(:register_event_schema, :post, "/api/v1/register-event-schema", body)
+    |> request(:register_event_schema, :post, "/api/v1/register-event-schema", body,
+      track_sending: true
+    )
     |> then(fn result -> with {:ok, body} <- result, do: schema_registered(body) end)
     |> WriteOutcome.classify(:v1)
   end
@@ -108,9 +110,9 @@ defmodule EventSourcingDB.Transport.V1 do
     end
   end
 
-  defp request(client, operation, method, path, body) do
+  defp request(client, operation, method, path, body, options \\ []) do
     client
-    |> HTTP.one_shot(method, path, body)
+    |> HTTP.one_shot(method, path, body, options)
     |> text_body(operation)
     |> then(fn result -> with {:ok, text} <- result, do: decode(text) end)
   end

@@ -99,7 +99,8 @@ defmodule EventSourcingDB.Transport.V2 do
     |> HTTP.stream(:post, "/api/v2/data/write-events", body,
       decode: decoder("event", &event/2),
       heartbeats?: true,
-      ending: :end_item
+      ending: :end_item,
+      track_sending: true
     )
     |> collect()
     |> WriteOutcome.classify(:v2)
@@ -123,7 +124,8 @@ defmodule EventSourcingDB.Transport.V2 do
       %{type: event_type, schema: schema},
       decode: decoder("event", fn data, _line -> schema_registered(data) end),
       heartbeats?: true,
-      ending: :end_item
+      ending: :end_item,
+      track_sending: true
     )
     |> collect()
     |> then(fn

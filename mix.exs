@@ -90,6 +90,7 @@ defmodule EventSourcingDB.MixProject do
       {:req, "~> 0.7.2"},
       {:finch, "~> 0.24"},
       {:jason, "~> 1.2"},
+      {:telemetry, "~> 1.0"},
       {:jose, "~> 1.11"},
       {:ex_json_schema, "~> 0.11.2"},
       {:typedstruct, "~> 0.5"},
