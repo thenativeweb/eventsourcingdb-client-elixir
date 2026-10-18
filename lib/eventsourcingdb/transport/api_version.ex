@@ -77,17 +77,25 @@ defmodule EventSourcingDB.Transport.ApiVersion do
 
   defp table?(), do: :ets.whereis(@table) != :undefined
 
+  # A request that waits for the probe of another one probes on its own
+  # should the process of this module go down meanwhile, as does a request
+  # that finds the process down.
   defp join(server, probe) do
-    case Process.whereis(__MODULE__) do
-      nil ->
-        probe_and_remember(server, probe)
-
-      coordinator ->
-        case GenServer.call(coordinator, {:join, server}, :infinity) do
-          :probe -> probe_for_all(coordinator, server, probe)
-          {:shared, result} -> result
-        end
+    with coordinator when is_pid(coordinator) <- Process.whereis(__MODULE__),
+         {:ok, answer} <- call_join(coordinator, server) do
+      case answer do
+        :probe -> probe_for_all(coordinator, server, probe)
+        {:shared, result} -> result
+      end
+    else
+      _down -> probe_and_remember(server, probe)
     end
+  end
+
+  defp call_join(coordinator, server) do
+    {:ok, GenServer.call(coordinator, {:join, server}, :infinity)}
+  catch
+    :exit, _reason -> :down
   end
 
   # The probe that ran just before this one joined may have found the API
