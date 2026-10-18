@@ -379,6 +379,32 @@ defmodule EventSourcingDBTest.StallTimeout do
     assert context.otel_context == %{span: "4712"}
   end
 
+  for protocol <- [:http1, :http2] do
+    @protocol protocol
+
+    test "closes the connection of a stream with heartbeats over #{protocol} once the calling process is down" do
+      client =
+        StreamServer.start(
+          fn connection ->
+            StreamServer.send_head(connection)
+            StreamServer.send_line(connection, %{"type" => "heartbeat", "payload" => %{}})
+          end,
+          protocol: @protocol
+        )
+
+      {caller, monitor} =
+        spawn_monitor(fn ->
+          EventSourcingDB.observe_events!(client, "/test") |> Stream.run()
+        end)
+
+      Process.sleep(200)
+      Process.exit(caller, :kill)
+
+      assert_receive {:DOWN, ^monitor, :process, ^caller, :killed}
+      assert_receive {:stream_server, :closed}, 1_000
+    end
+  end
+
   # Sends the process that runs the steps of a request, and what it holds, to
   # the given process.
   defp report_process(test_process) do

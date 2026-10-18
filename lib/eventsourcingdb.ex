@@ -974,8 +974,11 @@ defmodule EventSourcingDB do
     send(caller, {self(), result})
 
     case result do
-      {:ok, %Req.Response{body: %Req.Response.Async{ref: ref}}} -> forward(caller, monitor, ref)
-      _other -> :ok
+      {:ok, %Req.Response{body: %Req.Response.Async{}} = response} ->
+        forward(caller, monitor, response)
+
+      _other ->
+        :ok
     end
   end
 
@@ -1003,8 +1006,11 @@ defmodule EventSourcingDB do
   end
 
   # Forwards the messages of the response to the caller until the response
-  # ends, or until the caller is down.
-  defp forward(caller, monitor, ref) do
+  # ends, or until the caller is down. A caller that is down can not close the
+  # response anymore, so the relay cancels it, which ends the request and
+  # closes its connection, rather than leave Finch waiting for data without a
+  # bound.
+  defp forward(caller, monitor, %Req.Response{body: %Req.Response.Async{ref: ref}} = response) do
     receive do
       {^ref, :done} = message ->
         send(caller, message)
@@ -1014,10 +1020,11 @@ defmodule EventSourcingDB do
 
       {^ref, _} = message ->
         send(caller, message)
-        forward(caller, monitor, ref)
+        forward(caller, monitor, response)
 
       {:DOWN, ^monitor, :process, ^caller, _reason} ->
-        :ok
+        Req.cancel_async_response(response)
+        exit(:shutdown)
     end
   end
 
