@@ -12,7 +12,7 @@ end
 defmodule EventSourcingDBTest.WriteOutcome do
   alias EventSourcingDB.Client
   alias EventSourcingDB.Errors.{ConnectionStalled, OutcomeUnknown, TransmissionError}
-  alias EventSourcingDB.Transport.{ApiVersion, WriteOutcome}
+  alias EventSourcingDB.Transport.{ApiVersion, RequestPhase, WriteOutcome}
   import EventSourcingDBTest.Utils
   use ExUnit.Case, async: true
 
@@ -82,6 +82,54 @@ defmodule EventSourcingDBTest.WriteOutcome do
     end
   end
 
+  # The phase belongs to the request alone, so a child of the requesting
+  # process, whose own connection fails, does not make the request count as
+  # not sent.
+  test "a request that may have been sent stays so, even if a child of its process fails to connect" do
+    url = closed_url()
+
+    {_result, phase} =
+      RequestPhase.track(fn ->
+        Task.async(fn -> Req.request(base_url: url, url: "/", retry: false) end) |> Task.await()
+        {:error, %Req.TransportError{reason: :closed}}
+      end)
+
+    assert phase == :maybe_sent
+  end
+
+  test "a request that fails to connect was not sent" do
+    url = closed_url()
+
+    {result, phase} =
+      RequestPhase.track(fn -> Req.request(base_url: url, url: "/", retry: false) end)
+
+    assert {:error, %Req.TransportError{reason: :econnrefused}} = result
+    assert phase == :not_sent
+  end
+
+  # The phase lives with the process that asks for the request, so nothing
+  # is left behind for a process that goes down in the middle of it.
+  for api <- [:v1, :v2] do
+    @api api
+
+    test "nothing is left behind for a process that writes over the #{api} API and goes down" do
+      url = start_silent_server()
+      client = client(url, [])
+      :ok = ApiVersion.remember(client, @api)
+      on_exit(fn -> ApiVersion.forget(client) end)
+
+      writers =
+        for _ <- 1..3 do
+          spawn(fn -> write(:write_events, client) end)
+        end
+
+      for _ <- writers, do: assert_receive(:accepted, 5_000)
+      Enum.each(writers, &Process.exit(&1, :kill))
+
+      assert rows_of_dead_processes() == []
+    end
+  end
+
   test "a failure before the request was sent means that the write was not stored, whatever the reason" do
     failure = %ConnectionStalled{}
 
@@ -128,5 +176,48 @@ defmodule EventSourcingDBTest.WriteOutcome do
       {:ok, _socket} -> fill_queue(port, count + 1)
       {:error, :timeout} -> :ok
     end
+  end
+
+  defp closed_url() do
+    {:ok, socket} = :gen_tcp.listen(0, [:binary])
+    {:ok, port} = :inet.port(socket)
+    :ok = :gen_tcp.close(socket)
+
+    "http://localhost:#{port}"
+  end
+
+  # Starts a server that accepts every connection and never answers, and
+  # sends :accepted to the calling process for each request it receives.
+  defp start_silent_server() do
+    owner = self()
+    {:ok, listen_socket} = :gen_tcp.listen(0, [:binary, active: false, reuseaddr: true])
+    {:ok, port} = :inet.port(listen_socket)
+    start_supervised!({Task, fn -> accept_silently(listen_socket, owner) end})
+
+    "http://127.0.0.1:#{port}"
+  end
+
+  defp accept_silently(listen_socket, owner) do
+    {:ok, socket} = :gen_tcp.accept(listen_socket)
+
+    spawn(fn ->
+      {:ok, _data} = :gen_tcp.recv(socket, 0)
+      send(owner, :accepted)
+      :gen_tcp.recv(socket, 0)
+    end)
+    |> then(&:gen_tcp.controlling_process(socket, &1))
+
+    accept_silently(listen_socket, owner)
+  end
+
+  # The rows of the tables of the client SDK that belong to a process that is
+  # down.
+  defp rows_of_dead_processes() do
+    for table <- :ets.all(),
+        is_atom(table),
+        String.starts_with?(Atom.to_string(table), "Elixir.EventSourcingDB."),
+        {key, _value} <- :ets.tab2list(table),
+        is_pid(key) and not Process.alive?(key),
+        do: {table, key}
   end
 end

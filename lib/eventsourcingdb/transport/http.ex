@@ -441,7 +441,6 @@ defmodule EventSourcingDB.Transport.HTTP do
       relay_wait(timeout) ->
         Process.unlink(relay)
         stop_relay(relay, monitor)
-        RequestPhase.forget(relay)
         discard_relay_result(relay)
         {{:error, %Req.TransportError{reason: :timeout}}, :maybe_sent}
     end
@@ -489,17 +488,15 @@ defmodule EventSourcingDB.Transport.HTTP do
   defp run_relay(caller, context, req) do
     take_over_process_context(context)
     monitor = Process.monitor(caller)
-    RequestPhase.start()
 
-    result =
-      try do
-        Req.request(req, into: :self, receive_timeout: :infinity)
-      catch
-        kind, reason -> {:raised, kind, reason, __STACKTRACE__}
-      end
-
-    phase = RequestPhase.phase(self())
-    RequestPhase.forget(self())
+    {result, phase} =
+      RequestPhase.track_child(fn ->
+        try do
+          Req.request(req, into: :self, receive_timeout: :infinity)
+        catch
+          kind, reason -> {:raised, kind, reason, __STACKTRACE__}
+        end
+      end)
 
     # From here on, the monitor watches the caller, and the link would only
     # leave an exit message for a caller that traps exits.
