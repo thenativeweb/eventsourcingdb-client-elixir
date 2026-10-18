@@ -54,6 +54,22 @@ client = EventSourcingDB.Client.new(
 
 Streams work over HTTP/2 as well, and stay open for as long as data arrives.
 
+### Configuring the Stall Timeout
+
+A request fails once nothing at all arrives from the server for 30 seconds, from sending the request, including connecting and waiting for the response headers, until its end. Everything that arrives restarts the 30 seconds, so this does not limit how long a request takes: a stream stays open for as long as events, rows, or heartbeats keep arriving. To wait for a different time, pass the `stall_timeout` option to the client, in milliseconds:
+
+```elixir
+client = EventSourcingDB.Client.new(
+  base_url: "http://localhost:3000",
+  api_token: "secret",
+  stall_timeout: 10_000
+)
+```
+
+A request that stalls returns an `EventSourcingDB.Errors.TransmissionError` whose reason is a `Req.TransportError` with the reason `:timeout`, and a stream that stalls while you enumerate it raises that error. The streams of observing events and running EventQL queries, which receive heartbeats, raise an `EventSourcingDB.Errors.HeartbeatTimeout` error instead.
+
+*Note that a `receive_timeout` that you pass on to Req via `req_options` still applies to all requests other than observing events and running EventQL queries, so a request fails after the shorter of the two.*
+
 ## Writing Events
 
 Call the `write_events` function and hand over a list with one or more events. You do not have to provide all event fields – some are automatically added by the server.
@@ -159,7 +175,7 @@ case EventSourcingDB.read_events(client, "/books/42") do
 end
 ```
 
-If something goes wrong while you enumerate the stream, the stream closes the connection and raises the corresponding error: an `EventSourcingDB.Errors.DBError` if EventSourcingDB reports an error, an `EventSourcingDB.Errors.TransmissionError` if the connection fails, an `EventSourcingDB.Errors.InvalidResponseType` if the response contains an item of an unexpected type, or a `Jason.DecodeError` if the response is not valid JSON.
+If something goes wrong while you enumerate the stream, the stream closes the connection and raises the corresponding error: an `EventSourcingDB.Errors.DBError` if EventSourcingDB reports an error, an `EventSourcingDB.Errors.TransmissionError` if the connection fails or nothing arrives for the [stall timeout](#configuring-the-stall-timeout), an `EventSourcingDB.Errors.InvalidResponseType` if the response contains an item of an unexpected type, or a `Jason.DecodeError` if the response is not valid JSON.
 
 Like all functions that return a stream, `read_events` receives the response as messages sent to the calling process, so enumerate the stream in that process. While you do, the stream leaves the other messages of the process, such as the calls and casts of a GenServer, in its mailbox.
 
@@ -254,7 +270,7 @@ end
 
 *Note that each row returned by the stream matches the projection specified in your query.*
 
-While there are no rows to deliver, EventSourcingDB sends a heartbeat every second. If neither a row nor a heartbeat arrives for 30 seconds, the stream closes the connection and raises an `EventSourcingDB.Errors.HeartbeatTimeout` error.
+While there are no rows to deliver, EventSourcingDB sends a heartbeat every second. If neither a row nor a heartbeat arrives for the [stall timeout](#configuring-the-stall-timeout), 30 seconds by default, the stream closes the connection and raises an `EventSourcingDB.Errors.HeartbeatTimeout` error.
 
 If anything else goes wrong while you enumerate the stream, the stream closes the connection as well and raises the corresponding error: an `EventSourcingDB.Errors.DBError` if EventSourcingDB reports an error, an `EventSourcingDB.Errors.TransmissionError` if the connection fails, an `EventSourcingDB.Errors.InvalidResponseType` if the response contains an item of an unexpected type, or a `Jason.DecodeError` if the response is not valid JSON.
 
@@ -271,7 +287,7 @@ case EventSourcingDB.observe_events(client, "/books/42") do
 end
 ```
 
-While there are no events to deliver, EventSourcingDB sends a heartbeat every second. If neither an event nor a heartbeat arrives for 30 seconds, the stream closes the connection and raises an `EventSourcingDB.Errors.HeartbeatTimeout` error.
+While there are no events to deliver, EventSourcingDB sends a heartbeat every second. If neither an event nor a heartbeat arrives for the [stall timeout](#configuring-the-stall-timeout), 30 seconds by default, the stream closes the connection and raises an `EventSourcingDB.Errors.HeartbeatTimeout` error.
 
 If anything else goes wrong while you enumerate the stream, the stream closes the connection as well and raises the corresponding error: an `EventSourcingDB.Errors.DBError` if EventSourcingDB reports an error, an `EventSourcingDB.Errors.TransmissionError` if the connection fails, an `EventSourcingDB.Errors.InvalidResponseType` if the response contains an item of an unexpected type, or a `Jason.DecodeError` if the response is not valid JSON.
 
@@ -370,7 +386,7 @@ case EventSourcingDB.read_subjects(client, "/") do
 end
 ```
 
-If something goes wrong while you enumerate the stream, the stream closes the connection and raises the corresponding error: an `EventSourcingDB.Errors.DBError` if EventSourcingDB reports an error, an `EventSourcingDB.Errors.TransmissionError` if the connection fails, an `EventSourcingDB.Errors.InvalidResponseType` if the response contains an item of an unexpected type, or a `Jason.DecodeError` if the response is not valid JSON.
+If something goes wrong while you enumerate the stream, the stream closes the connection and raises the corresponding error: an `EventSourcingDB.Errors.DBError` if EventSourcingDB reports an error, an `EventSourcingDB.Errors.TransmissionError` if the connection fails or nothing arrives for the [stall timeout](#configuring-the-stall-timeout), an `EventSourcingDB.Errors.InvalidResponseType` if the response contains an item of an unexpected type, or a `Jason.DecodeError` if the response is not valid JSON.
 
 If you only want to list subjects within a specific branch, provide the desired base subject instead:
 
@@ -389,7 +405,7 @@ case EventSourcingDB.read_event_types(client) do
 end
 ```
 
-If something goes wrong while you enumerate the stream, the stream closes the connection and raises the corresponding error: an `EventSourcingDB.Errors.DBError` if EventSourcingDB reports an error, an `EventSourcingDB.Errors.TransmissionError` if the connection fails, an `EventSourcingDB.Errors.InvalidResponseType` if the response contains an item of an unexpected type, or a `Jason.DecodeError` if the response is not valid JSON.
+If something goes wrong while you enumerate the stream, the stream closes the connection and raises the corresponding error: an `EventSourcingDB.Errors.DBError` if EventSourcingDB reports an error, an `EventSourcingDB.Errors.TransmissionError` if the connection fails or nothing arrives for the [stall timeout](#configuring-the-stall-timeout), an `EventSourcingDB.Errors.InvalidResponseType` if the response contains an item of an unexpected type, or a `Jason.DecodeError` if the response is not valid JSON.
 
 ## Reading a Specific Event Type
 

@@ -226,7 +226,7 @@ defmodule EventSourcingDB do
   end
   ```
 
-  If something goes wrong while you enumerate the stream, the stream closes the connection and raises the corresponding error: an `EventSourcingDB.Errors.DBError` if EventSourcingDB reports an error, an `EventSourcingDB.Errors.TransmissionError` if the connection fails, an `EventSourcingDB.Errors.InvalidResponseType` if the response contains an item of an unexpected type, or a `Jason.DecodeError` if the response is not valid JSON.
+  If something goes wrong while you enumerate the stream, the stream closes the connection and raises the corresponding error: an `EventSourcingDB.Errors.DBError` if EventSourcingDB reports an error, an `EventSourcingDB.Errors.TransmissionError` if the connection fails or nothing arrives for the stall timeout of the client (see `EventSourcingDB.Client`), an `EventSourcingDB.Errors.InvalidResponseType` if the response contains an item of an unexpected type, or a `Jason.DecodeError` if the response is not valid JSON.
 
   Like all functions that return a stream, `read_events` receives the response as messages sent to the calling process, so enumerate the stream in that process. While you do, the stream leaves the other messages of the process, such as the calls and casts of a GenServer, in its mailbox.
 
@@ -335,7 +335,7 @@ defmodule EventSourcingDB do
   end
   ```
 
-  While there are no events to deliver, EventSourcingDB sends a heartbeat every second. If neither an event nor a heartbeat arrives for 30 seconds, the stream closes the connection and raises an `EventSourcingDB.Errors.HeartbeatTimeout` error.
+  While there are no events to deliver, EventSourcingDB sends a heartbeat every second. If neither an event nor a heartbeat arrives for the stall timeout of the client (see `EventSourcingDB.Client`), 30 seconds by default, the stream closes the connection and raises an `EventSourcingDB.Errors.HeartbeatTimeout` error.
 
   If anything else goes wrong while you enumerate the stream, the stream closes the connection as well and raises the corresponding error: an `EventSourcingDB.Errors.DBError` if EventSourcingDB reports an error, an `EventSourcingDB.Errors.TransmissionError` if the connection fails, an `EventSourcingDB.Errors.InvalidResponseType` if the response contains an item of an unexpected type, or a `Jason.DecodeError` if the response is not valid JSON.
 
@@ -425,7 +425,7 @@ defmodule EventSourcingDB do
 
   *Note that each row returned by the stream matches the projection specified in your query.*
 
-  While there are no rows to deliver, EventSourcingDB sends a heartbeat every second. If neither a row nor a heartbeat arrives for 30 seconds, the stream closes the connection and raises an `EventSourcingDB.Errors.HeartbeatTimeout` error.
+  While there are no rows to deliver, EventSourcingDB sends a heartbeat every second. If neither a row nor a heartbeat arrives for the stall timeout of the client (see `EventSourcingDB.Client`), 30 seconds by default, the stream closes the connection and raises an `EventSourcingDB.Errors.HeartbeatTimeout` error.
 
   If anything else goes wrong while you enumerate the stream, the stream closes the connection as well and raises the corresponding error: an `EventSourcingDB.Errors.DBError` if EventSourcingDB reports an error, an `EventSourcingDB.Errors.TransmissionError` if the connection fails, an `EventSourcingDB.Errors.InvalidResponseType` if the response contains an item of an unexpected type, or a `Jason.DecodeError` if the response is not valid JSON.
 
@@ -487,7 +487,7 @@ defmodule EventSourcingDB do
   end
   ```
 
-  If something goes wrong while you enumerate the stream, the stream closes the connection and raises the corresponding error: an `EventSourcingDB.Errors.DBError` if EventSourcingDB reports an error, an `EventSourcingDB.Errors.TransmissionError` if the connection fails, an `EventSourcingDB.Errors.InvalidResponseType` if the response contains an item of an unexpected type, or a `Jason.DecodeError` if the response is not valid JSON.
+  If something goes wrong while you enumerate the stream, the stream closes the connection and raises the corresponding error: an `EventSourcingDB.Errors.DBError` if EventSourcingDB reports an error, an `EventSourcingDB.Errors.TransmissionError` if the connection fails or nothing arrives for the stall timeout of the client (see `EventSourcingDB.Client`), an `EventSourcingDB.Errors.InvalidResponseType` if the response contains an item of an unexpected type, or a `Jason.DecodeError` if the response is not valid JSON.
 
   If you only want to list subjects within a specific branch, provide the desired base subject instead:
 
@@ -539,7 +539,7 @@ defmodule EventSourcingDB do
   end
   ```
 
-  If something goes wrong while you enumerate the stream, the stream closes the connection and raises the corresponding error: an `EventSourcingDB.Errors.DBError` if EventSourcingDB reports an error, an `EventSourcingDB.Errors.TransmissionError` if the connection fails, an `EventSourcingDB.Errors.InvalidResponseType` if the response contains an item of an unexpected type, or a `Jason.DecodeError` if the response is not valid JSON.
+  If something goes wrong while you enumerate the stream, the stream closes the connection and raises the corresponding error: an `EventSourcingDB.Errors.DBError` if EventSourcingDB reports an error, an `EventSourcingDB.Errors.TransmissionError` if the connection fails or nothing arrives for the stall timeout of the client (see `EventSourcingDB.Client`), an `EventSourcingDB.Errors.InvalidResponseType` if the response contains an item of an unexpected type, or a `Jason.DecodeError` if the response is not valid JSON.
   """
   @spec read_event_types(Client.t()) :: stream_response(EventType.t())
   def read_event_types(client) do
@@ -555,15 +555,6 @@ defmodule EventSourcingDB do
   # region Requests
   #
 
-  # Streams with heartbeats end with a HeartbeatTimeout error if neither a line
-  # nor a heartbeat arrives for this many milliseconds. The value is fixed, only
-  # the tests shorten it through the application environment.
-  @heartbeat_timeout 30_000
-
-  # Finch waits this many milliseconds for data, unless the client sets a
-  # receive timeout of its own.
-  @receive_timeout 15_000
-
   @spec request_stream!(Client.t(), struct()) :: stream_response!(any())
   defp request_stream!(client, request) do
     result = request_stream(client, request)
@@ -577,11 +568,10 @@ defmodule EventSourcingDB do
   @spec request_stream(Client.t(), struct()) :: stream_response(any())
   defp request_stream(client, request) do
     req = build_request(client, request)
+    timeout = wait_timeout(client, req, get_request_module(request).heartbeats?())
 
-    case open_stream(req, request) do
+    case open_stream(req, timeout) do
       {:ok, response} ->
-        line_timeout = line_timeout(req, request)
-
         # The resource receives the lines of the response, and keeps the start
         # of a line that has not arrived completely yet next to the response.
         # Errors while the stream is read are raised, also while a line is
@@ -590,7 +580,7 @@ defmodule EventSourcingDB do
         stream =
           Stream.resource(
             fn -> {response, ""} end,
-            fn state -> receive_lines(state, request, line_timeout) end,
+            fn state -> receive_lines(state, request, timeout) end,
             fn {response, _rest} -> close_stream(response) end
           )
           |> Stream.flat_map(&handle_line(&1, request))
@@ -602,27 +592,20 @@ defmodule EventSourcingDB do
     end
   end
 
-  @spec open_stream(Req.Request.t(), struct()) :: response(Req.Response.t())
-  defp open_stream(req, request) do
-    receive_timeout = receive_timeout(req, request)
-
-    response =
-      if finch_bounds_each_wait?(req) do
-        Req.request(req, stream_options(request))
-      else
-        request_through_relay(req, receive_timeout)
-      end
+  @spec open_stream(Req.Request.t(), timeout()) :: response(Req.Response.t())
+  defp open_stream(req, timeout) do
+    response = request_through_relay(req, timeout)
 
     with :ok <- validate_transmission(response) do
-      validate_stream_response(response, receive_timeout)
+      validate_stream_response(response, timeout)
     end
   end
 
   # A stream that fails to open closes its response right away, so that none
   # of its messages stay behind in the mailbox.
-  defp validate_stream_response({:ok, response} = result, receive_timeout) do
+  defp validate_stream_response({:ok, response} = result, timeout) do
     with :ok <- validate_server_headers(result),
-         :ok <- validate_stream_status(response, receive_timeout) do
+         :ok <- validate_stream_status(response, timeout) do
       {:ok, response}
     else
       error ->
@@ -634,60 +617,50 @@ defmodule EventSourcingDB do
   # For a status other than 200, the error carries the text that the server
   # sent, as for the one-shot requests, so the body is read before the
   # response is closed.
-  defp validate_stream_status(%Req.Response{status: 200}, _receive_timeout), do: :ok
+  defp validate_stream_status(%Req.Response{status: 200}, _timeout), do: :ok
 
-  defp validate_stream_status(response, receive_timeout) do
-    case read_body(response, receive_timeout, "") do
+  defp validate_stream_status(response, timeout) do
+    case read_body(response, timeout, "") do
       {:ok, body} -> {:error, %ApiError{reason: body}}
       {:error, reason} -> {:error, %TransmissionError{reason: reason}}
     end
   end
 
   # Reads the rest of the body, and waits for each block of it at most for the
-  # receive timeout.
-  defp read_body(response, receive_timeout, body) do
-    case receive_message(response, deadline(receive_timeout)) do
-      {:ok, [data: data]} -> read_body(response, receive_timeout, body <> data)
+  # timeout.
+  defp read_body(response, timeout, body) do
+    case receive_message(response, deadline(timeout)) do
+      {:ok, [data: data]} -> read_body(response, timeout, body <> data)
       {:ok, [:done]} -> {:ok, body}
-      {:ok, _other} -> read_body(response, receive_timeout, body)
+      {:ok, _other} -> read_body(response, timeout, body)
       {:error, reason} -> {:error, reason}
       :timeout -> {:error, %Req.TransportError{reason: :timeout}}
     end
   end
 
-  # The heartbeat timeout watches streams with heartbeats, so the socket must not
-  # time out before it does (Req defaults to 15 seconds). The socket's receive
-  # timeout still bounds the wait for the response headers.
-  defp stream_options(request) do
-    case heartbeat_timeout(request) do
-      :infinity -> [into: :self]
-      timeout -> [into: :self, receive_timeout: 2 * timeout]
-    end
-  end
-
-  # Every call waits for the next lines with a new deadline, so every line,
-  # including a heartbeat, restarts the heartbeat timeout. The data of the
+  # Every block of the response restarts the timeout, since anything that
+  # arrives shows that the connection is alive, so the start of a line that
+  # has not arrived completely yet restarts it as well. The data of the
   # response arrives in blocks, which need not match the lines: a block may
   # hold several lines, and a long line may span several blocks. So the start
-  # of a line waits in the state until the rest of it arrives. It is not a line
-  # yet, so it does not restart the heartbeat timeout.
+  # of a line waits in the state until the rest of it arrives.
   #
   # Errors are raised rather than returned, because Stream.resource takes a
   # returned {:error, reason} for a list of items. Raising ends the stream,
   # which cancels the response and thereby closes the connection.
-  defp receive_lines({response, :done}, _request, _line_timeout) do
+  defp receive_lines({response, :done}, _request, _timeout) do
     {:halt, {response, :done}}
   end
 
-  defp receive_lines({response, rest}, request, line_timeout) do
-    receive_lines(response, rest, request, deadline(line_timeout))
+  defp receive_lines({response, rest}, request, timeout) do
+    receive_lines(response, rest, request, timeout)
   end
 
-  defp receive_lines(response, rest, request, deadline) do
-    case receive_message(response, deadline) do
+  defp receive_lines(response, rest, request, timeout) do
+    case receive_message(response, deadline(timeout)) do
       {:ok, [data: data]} ->
         case split_lines(rest, data) do
-          {[], rest} -> receive_lines(response, rest, request, deadline)
+          {[], rest} -> receive_lines(response, rest, request, timeout)
           {lines, rest} -> {lines, {response, rest}}
         end
 
@@ -700,13 +673,13 @@ defmodule EventSourcingDB do
       # Other messages of the response, such as trailing headers, carry no
       # line.
       {:ok, _other} ->
-        receive_lines(response, rest, request, deadline)
+        receive_lines(response, rest, request, timeout)
 
       {:error, reason} ->
         raise(%TransmissionError{reason: reason})
 
       :timeout ->
-        raise(timeout_error(request))
+        raise(timeout_error(request, timeout))
     end
   end
 
@@ -740,8 +713,8 @@ defmodule EventSourcingDB do
 
   # Waits for the next message of the response. Finch tags every message of the
   # response with the reference of the request, so only these are received,
-  # and all other messages of the process stay in its mailbox. They are not a
-  # line, so they do not restart the heartbeat timeout either.
+  # and all other messages of the process stay in its mailbox. They do not
+  # come from the server, so they do not restart the timeout either.
   defp receive_message(%Req.Response{body: %Req.Response.Async{ref: ref}} = response, deadline) do
     receive do
       {^ref, _} = message ->
@@ -768,81 +741,42 @@ defmodule EventSourcingDB do
     Req.cancel_async_response(response)
   end
 
-  # How long a stream waits for the next line. For streams with heartbeats,
-  # this is the heartbeat timeout. For other streams, Finch bounds each wait
-  # for data with the receive timeout, unless the stream has to bound it
-  # itself (see request_through_relay/2).
-  defp line_timeout(req, request) do
-    case heartbeat_timeout(request) do
-      :infinity ->
-        if finch_bounds_each_wait?(req), do: :infinity, else: receive_timeout(req, request)
+  # How long a request waits for the server before it fails, if nothing at
+  # all arrives: from sending the request, including connecting, until the
+  # response headers arrive, and then until each block of the body arrives.
+  # It is the stall timeout of the client, which also replaces the timeout of
+  # the heartbeats that observing events and running EventQL queries receive
+  # every second. For other requests, a receive timeout that the client passes
+  # on to Req bounds each wait as well, as it always has.
+  defp wait_timeout(client, _req, true = _heartbeats?), do: client.stall_timeout
 
-      timeout ->
-        timeout
-    end
+  defp wait_timeout(client, req, false = _heartbeats?) do
+    min(client.stall_timeout, Req.Request.get_option(req, :receive_timeout, :infinity))
   end
 
-  defp timeout_error(request) do
+  defp timeout_error(request, timeout) do
     if get_request_module(request).heartbeats?() do
-      %HeartbeatTimeout{}
+      %HeartbeatTimeout{
+        message: "Heartbeat Timeout: No event and no heartbeat arrived for #{duration(timeout)}."
+      }
     else
       %TransmissionError{reason: %Req.TransportError{reason: :timeout}}
     end
   end
+
+  defp duration(1_000), do: "1 second"
+
+  defp duration(milliseconds) when rem(milliseconds, 1_000) == 0,
+    do: "#{div(milliseconds, 1_000)} seconds"
+
+  defp duration(1), do: "1 millisecond"
+  defp duration(milliseconds), do: "#{milliseconds} milliseconds"
 
   defp deadline(:infinity), do: :infinity
   defp deadline(timeout), do: System.monotonic_time(:millisecond) + timeout
 
   defp remaining_time(:infinity), do: :infinity
   defp remaining_time(deadline), do: max(deadline - System.monotonic_time(:millisecond), 0)
-
-  defp heartbeat_timeout(request) do
-    if get_request_module(request).heartbeats?() do
-      Application.get_env(:eventsourcingdb, :heartbeat_timeout, @heartbeat_timeout)
-    else
-      :infinity
-    end
-  end
-
-  # The receive timeout bounds each wait for data, including the wait for the
-  # response headers. For streams with heartbeats, it must not end the stream
-  # before the heartbeat timeout does (see stream_options/1).
-  defp receive_timeout(req, request) do
-    case heartbeat_timeout(request) do
-      :infinity -> Req.Request.get_option(req, :receive_timeout, @receive_timeout)
-      timeout -> 2 * timeout
-    end
-  end
-
-  # Finch bounds each wait for data with the receive timeout only in an HTTP/1
-  # pool, and the whole request in an HTTP/2 pool. Req starts an HTTP/2 pool if
-  # the protocols leave out HTTP/1 (with both, the protocol is negotiated per
-  # connection within an HTTP/1 pool). The protocols of a pool that the client
-  # brings by name are unknown, so the stream bounds each wait itself there,
-  # whether the pool speaks HTTP/1 or HTTP/2.
-  defp finch_bounds_each_wait?(req) do
-    case Req.Request.get_option(req, :finch) do
-      nil ->
-        http1_pool?(req, [])
-
-      options when is_list(options) ->
-        not Keyword.has_key?(options, :name) and http1_pool?(req, options)
-
-      _name ->
-        false
-    end
-  end
-
-  # Req takes the protocols from the Finch options, or else from the connection
-  # options.
-  defp http1_pool?(req, finch_options) do
-    protocols =
-      Keyword.get_lazy(finch_options, :protocols, fn ->
-        Req.Finch.pool_options(req.options)[:protocols]
-      end)
-
-    :http1 in protocols
-  end
 
   defp evaluate_message(message, request) do
     request_module = get_request_module(request)
@@ -875,11 +809,8 @@ defmodule EventSourcingDB do
   @spec request_one_shot(Client.t(), struct()) :: response(any())
   defp request_one_shot(client, request) do
     request_module = get_request_module(request)
-
-    response =
-      client
-      |> build_request(request)
-      |> Req.request()
+    req = build_request(client, request)
+    response = receive_response(req, wait_timeout(client, req, false))
 
     # credo warns the last two statements have the same error signature and can
     # therefore be combined. This was a design choice on purpose to have
@@ -910,27 +841,50 @@ defmodule EventSourcingDB do
     end
   end
 
+  # Receives a whole response the way a stream receives its lines, so that the
+  # timeout bounds each wait for it, and then decodes its body as Req does.
+  defp receive_response(req, timeout) do
+    with {:ok, response} <- request_through_relay(req, timeout) do
+      result = read_body(response, timeout, "")
+      close_stream(response)
+
+      with {:ok, body} <- result do
+        decode_body(req, %{response | body: body})
+      end
+    end
+  end
+
+  defp decode_body(req, response) do
+    case Req.Steps.decode_body({req, response}) do
+      {_req, %Req.Response{} = response} -> {:ok, response}
+      {_req, exception} -> {:error, exception}
+    end
+  end
+
   #
   # region Relay
   #
 
-  # Over HTTP/2, Finch bounds a whole request with the receive timeout, rather
-  # than each wait for data, so a stream that runs for longer would end while
-  # data still arrives. So the stream asks Finch for no timeout, and bounds
-  # each wait itself: the wait for the response headers here, and the wait for
-  # each line in receive_lines/3. Req then waits for the response headers in a
-  # receive without any bound, which the caller can not interrupt, so the
-  # request runs in a relay process, which forwards the messages of the
-  # response to the caller, while the caller bounds the wait. A pool that the
-  # client brings by name takes this path as well, even one that speaks
-  # HTTP/1, where Finch then waits for data without a bound, too.
+  # Finch bounds the waits for data in its own way: in an HTTP/1 pool each
+  # wait with the receive timeout, but connecting with a timeout of its own,
+  # and in an HTTP/2 pool the whole request, so a stream that runs for longer
+  # would end while data still arrives. So every request asks Finch for no
+  # timeout, and bounds each wait itself: the wait for the response headers
+  # here, from sending the request, and the wait for each block of the body
+  # in read_body/3 and receive_lines/4. Req then waits for the response
+  # headers in a receive without any bound, which the caller can not
+  # interrupt, so the request runs in a relay process, which forwards the
+  # messages of the response to the caller, while the caller bounds the wait.
   #
   # The relay is linked to the caller while it waits for the response headers,
   # and monitors it afterwards, so it does not outlive the caller. Finch in turn
-  # cancels the request once the relay is down.
+  # cancels the request once the relay is down. Like a task, the relay names
+  # the caller among its callers, so that what the caller is allowed, such as
+  # the stubs of Req.Test, holds for the relay as well.
   defp request_through_relay(req, timeout) do
     caller = self()
-    relay = spawn_link(fn -> run_relay(caller, req) end)
+    callers = [caller | Process.get(:"$callers", [])]
+    relay = spawn_link(fn -> run_relay(caller, callers, req) end)
     monitor = Process.monitor(relay)
 
     receive do
@@ -978,7 +932,8 @@ defmodule EventSourcingDB do
     end
   end
 
-  defp run_relay(caller, req) do
+  defp run_relay(caller, callers, req) do
+    Process.put(:"$callers", callers)
     monitor = Process.monitor(caller)
 
     result =

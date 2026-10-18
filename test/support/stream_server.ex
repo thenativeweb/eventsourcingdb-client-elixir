@@ -13,6 +13,9 @@ defmodule EventSourcingDBTest.StreamServer do
   # with prior knowledge), and the client uses an HTTP/2 pool. There the
   # client ends a stream by resetting it and keeps the connection, so a reset
   # counts as closing.
+  #
+  # The client waits for the server for the stall timeout given as the
+  # stall_timeout option, or for the default of the client without it.
 
   @response_headers [
     {"server", "EventSourcingDB/test"},
@@ -40,6 +43,7 @@ defmodule EventSourcingDBTest.StreamServer do
     owner = self()
     protocol = Keyword.get(options, :protocol, :http1)
     req_options = [retry: false] ++ Keyword.get(options, :req_options, req_options(protocol))
+    client_options = Keyword.take(options, [:stall_timeout])
 
     ExUnit.Callbacks.start_supervised!({Task, fn -> serve(owner, script, protocol) end})
 
@@ -51,7 +55,9 @@ defmodule EventSourcingDBTest.StreamServer do
           ExUnit.Callbacks.on_exit(fn -> stop_pool(req_options, base_url) end)
         end
 
-        Client.new(base_url: base_url, api_token: "secret", req_options: req_options)
+        Client.new(
+          [base_url: base_url, api_token: "secret", req_options: req_options] ++ client_options
+        )
     after
       1_000 -> raise "Stream server did not start."
     end
