@@ -1,5 +1,6 @@
 defmodule EventSourcingDBTest.Utils do
   @moduledoc false
+  alias EventSourcingDB.Errors.ApiError
   alias EventSourcingDB.Event
   alias EventSourcingDB.EventCandidate
   alias EventSourcingDB.TestContainer
@@ -14,6 +15,48 @@ defmodule EventSourcingDBTest.Utils do
       "" -> TestContainer.new()
       image_tag -> TestContainer.with_image_tag(TestContainer.new(), image_tag)
     end
+  end
+
+  # Returns the client of the container, which sends the status code of every
+  # response to the calling process as {:status, status}, so that a test can
+  # check it, too.
+  @spec client_reporting_status(struct()) :: EventSourcingDB.Client.t()
+  def client_reporting_status(container) do
+    test_process = self()
+
+    report_status = fn req ->
+      Req.Request.append_response_steps(req,
+        report_status: fn {request, response} ->
+          send(test_process, {:status, response.status})
+          {request, response}
+        end
+      )
+    end
+
+    client = TestContainer.get_client(container)
+    %{client | req_options: client.req_options ++ [plugins: [report_status]]}
+  end
+
+  # Asserts that the result is an ApiError whose reason the server gave, without
+  # depending on its wording, which EventSourcingDB 1.3 changes: the reason
+  # starts with the given prefix, contains each of the given parts, and ends
+  # with a newline, and the error names it in the SDK's own format.
+  @spec assert_api_error(any(), String.t(), [String.t()]) :: any()
+  def assert_api_error(result, prefix, parts \\ []) do
+    assert {:error, %ApiError{reason: reason} = error} = result
+    assert is_binary(reason)
+
+    assert String.starts_with?(reason, prefix),
+           "#{inspect(reason)} does not start with #{inspect(prefix)}"
+
+    assert String.ends_with?(reason, "\n")
+
+    for part <- parts do
+      assert String.contains?(reason, part),
+             "#{inspect(reason)} does not contain #{inspect(part)}"
+    end
+
+    assert Exception.message(error) == "API Error: #{reason}"
   end
 
   @spec create_test_eventcandidate(String.t(), map()) :: EventCandidate.t()
