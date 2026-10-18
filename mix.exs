@@ -73,7 +73,8 @@ defmodule EventSourcingDB.MixProject do
           EventSourcingDB.ObserveEventsOptions,
           EventSourcingDB.ObserveFromLatestEventOptions,
           EventSourcingDB.ReadEventsOptions,
-          EventSourcingDB.ReadFromLatestEventOptions
+          EventSourcingDB.ReadFromLatestEventOptions,
+          EventSourcingDB.ReadSubjectsOptions
         ],
         Testing: [
           EventSourcingDB.TestContainer

@@ -6,6 +6,7 @@ defmodule EventSourcingDB do
   alias EventSourcingDB.{
     ObserveEventsOptions,
     ReadEventsOptions,
+    ReadSubjectsOptions,
     Client,
     Event,
     EventCandidate,
@@ -459,10 +460,14 @@ defmodule EventSourcingDB do
   @doc """
   Reading Subjects
 
-  To list all subjects, call the `read_subjects` function with `/` as the base subject. The function returns a stream from which you can retrieve one subject at a time:
+  To list subjects, call the `read_subjects` function with a subject and an options struct, which must say whether to read recursively. To list all subjects, provide `/` as the subject and set `recursive` to `true`. The function returns a stream from which you can retrieve one subject at a time:
 
   ```elixir
-  case EventSourcingDB.read_subjects(client, "/") do
+  case EventSourcingDB.read_subjects(
+    client,
+    "/",
+    %EventSourcingDB.ReadSubjectsOptions{recursive: true}
+  ) do
     {:ok, subjects} -> Enum.to_list(subjects)
     {:error, reason} -> # ...
   end
@@ -470,20 +475,38 @@ defmodule EventSourcingDB do
 
   If something goes wrong while you enumerate the stream, the stream closes the connection and raises the corresponding error: an `EventSourcingDB.Errors.DBError` if EventSourcingDB reports an error, an `EventSourcingDB.Errors.TransmissionError` if the connection fails or nothing arrives for the stall timeout of the client (see `EventSourcingDB.Client`), an `EventSourcingDB.Errors.InvalidResponseType` if the response contains an item of an unexpected type, or a `Jason.DecodeError` if the response is not valid JSON.
 
-  If you only want to list subjects within a specific branch, provide the desired base subject instead:
+  If you only want to list subjects within a specific branch, provide the desired subject instead. With `recursive` set to `false`, the stream contains the subject alone, if it exists:
 
   ```elixir
-  EventSourcingDB.read_subjects(client, "/books")
+  EventSourcingDB.read_subjects(
+    client,
+    "/books",
+    %EventSourcingDB.ReadSubjectsOptions{recursive: false}
+  )
   ```
+
+  The options are required. Without a `recursive` option of `true` or `false`, the function raises an `ArgumentError`.
   """
-  @spec read_subjects(Client.t(), String.t()) :: stream_response(String.t())
-  def read_subjects(client, base_subject) do
-    with_api(client, & &1.read_subjects(client, base_subject, true))
+  @spec read_subjects(Client.t(), String.t(), ReadSubjectsOptions.t()) ::
+          stream_response(String.t())
+  def read_subjects(client, subject, options) do
+    recursive = recursive!(options)
+    with_api(client, & &1.read_subjects(client, subject, recursive))
   end
 
-  @spec read_subjects!(Client.t(), String.t()) :: stream_response!(String.t())
-  def read_subjects!(client, base_subject) do
-    unwrap!(read_subjects(client, base_subject))
+  @spec read_subjects!(Client.t(), String.t(), ReadSubjectsOptions.t()) ::
+          stream_response!(String.t())
+  def read_subjects!(client, subject, options) do
+    unwrap!(read_subjects(client, subject, options))
+  end
+
+  defp recursive!(%ReadSubjectsOptions{recursive: recursive}) when is_boolean(recursive),
+    do: recursive
+
+  defp recursive!(options) do
+    raise ArgumentError,
+          "expected the options of read_subjects to be an EventSourcingDB.ReadSubjectsOptions " <>
+            "struct whose :recursive is true or false, got: #{inspect(options)}"
   end
 
   @doc """

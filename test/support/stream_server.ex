@@ -170,7 +170,7 @@ defmodule EventSourcingDBTest.StreamServer do
     send(owner, {:stream_server, :listening, port})
 
     {:ok, socket} = :gen_tcp.accept(listen_socket)
-    connection = receive_request(socket, protocol)
+    connection = receive_request(socket, protocol, owner)
 
     script.(connection)
 
@@ -178,12 +178,18 @@ defmodule EventSourcingDBTest.StreamServer do
     send(owner, {:stream_server, :closed})
   end
 
-  defp receive_request(socket, :http1) do
-    :ok = receive_request_head(socket, "")
+  # Reads the request, and sends its request line and its body to the process
+  # that started the server, as {:stream_server, :request, request_line, body}.
+  defp receive_request(socket, :http1, owner) do
+    {head, body} = receive_request_head(socket, "")
+    [request_line | header_lines] = String.split(head, "\r\n")
+    body = receive_body(socket, body, content_length(header_lines))
+    send(owner, {:stream_server, :request, request_line, body})
+
     socket
   end
 
-  defp receive_request(socket, :http2) do
+  defp receive_request(socket, :http2, _owner) do
     {:ok, @http2_preface} = :gen_tcp.recv(socket, byte_size(@http2_preface))
     :ok = send_frame(socket, @settings_frame, 0, 0, "")
 
@@ -191,12 +197,34 @@ defmodule EventSourcingDBTest.StreamServer do
   end
 
   defp receive_request_head(socket, received) do
-    if String.contains?(received, "\r\n\r\n") do
-      :ok
-    else
-      {:ok, data} = :gen_tcp.recv(socket, 0)
-      receive_request_head(socket, received <> data)
+    case String.split(received, "\r\n\r\n", parts: 2) do
+      [head, body] ->
+        {head, body}
+
+      [_incomplete] ->
+        {:ok, data} = :gen_tcp.recv(socket, 0)
+        receive_request_head(socket, received <> data)
     end
+  end
+
+  defp content_length(header_lines) do
+    Enum.find_value(header_lines, 0, fn line ->
+      case String.split(line, ":", parts: 2) do
+        [name, value] ->
+          if String.downcase(name) == "content-length",
+            do: value |> String.trim() |> String.to_integer()
+
+        _other ->
+          nil
+      end
+    end)
+  end
+
+  defp receive_body(_socket, body, length) when byte_size(body) >= length, do: body
+
+  defp receive_body(socket, body, length) do
+    {:ok, data} = :gen_tcp.recv(socket, 0)
+    receive_body(socket, body <> data, length)
   end
 
   # Reads frames until the client has sent a whole request, acknowledges the

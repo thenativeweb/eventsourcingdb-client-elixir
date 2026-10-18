@@ -156,15 +156,23 @@ defmodule EventSourcingDB.Transport.V1 do
   end
 
   @impl true
-  def read_subjects(client, subject, _recursive) do
-    stream(
-      client,
-      "/api/v1/read-subjects",
-      %{baseSubject: subject},
-      "subject",
-      fn payload, _line -> payload["subject"] end,
-      heartbeats?: false
-    )
+  # The v1 API always reads recursively, from the subject on, so reading the
+  # subject alone keeps only the subject itself.
+  def read_subjects(client, subject, recursive) do
+    result =
+      stream(
+        client,
+        "/api/v1/read-subjects",
+        %{baseSubject: subject},
+        "subject",
+        fn payload, _line -> payload["subject"] end,
+        heartbeats?: false
+      )
+
+    case result do
+      {:ok, subjects} when not recursive -> {:ok, Stream.filter(subjects, &(&1 == subject))}
+      result -> result
+    end
   end
 
   @impl true

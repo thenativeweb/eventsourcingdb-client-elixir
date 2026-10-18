@@ -4,6 +4,7 @@ defmodule EventSourcingDBTest.StreamErrors do
   alias EventSourcingDB.Errors.InvalidResponseType
   alias EventSourcingDB.Errors.InvalidServerHeader
   alias EventSourcingDB.Errors.TransmissionError
+  alias EventSourcingDB.ReadSubjectsOptions
   alias EventSourcingDBTest.StreamServer
   use ExUnit.Case, async: true
 
@@ -74,7 +75,8 @@ defmodule EventSourcingDBTest.StreamErrors do
 
     {result, _elapsed} =
       StreamServer.run_with_guard(fn ->
-        EventSourcingDB.read_subjects!(client, "/") |> Enum.to_list()
+        EventSourcingDB.read_subjects!(client, "/", %ReadSubjectsOptions{recursive: true})
+        |> Enum.to_list()
       end)
 
     assert match?({:raised, %Jason.DecodeError{}}, result)
