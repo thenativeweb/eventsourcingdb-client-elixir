@@ -30,10 +30,12 @@ defmodule EventSourcingDBTest.FakeServer do
       id: make_ref()
     )
 
-    # A server that listened on the same port before may have left the API
-    # that the client SDK found for it behind.
+    # Neither the API that a server on the same port left behind before, nor
+    # the API that the client SDK finds for this one, may outlive the server.
     url = "http://127.0.0.1:#{port}"
-    :ok = ApiVersion.forget(Client.new(url, "secret"))
+    client = Client.new(url, "secret")
+    :ok = ApiVersion.forget(client)
+    ExUnit.Callbacks.on_exit(fn -> ApiVersion.forget(client) end)
     url
   end
 

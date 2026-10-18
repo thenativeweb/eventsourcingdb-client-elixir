@@ -61,7 +61,10 @@ defmodule EventSourcingDBTest.StreamServer do
               client_options
           )
 
+        # The API that the client takes may not outlive the server, whose port
+        # a later server may listen on.
         :ok = ApiVersion.remember(client, Keyword.get(options, :api, :v1))
+        ExUnit.Callbacks.on_exit(fn -> ApiVersion.forget(client) end)
 
         if protocol == :http2 do
           ExUnit.Callbacks.on_exit(fn -> stop_pool(client) end)

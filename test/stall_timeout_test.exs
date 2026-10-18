@@ -505,7 +505,13 @@ defmodule EventSourcingDBTest.StallTimeout do
 
     start_supervised!({Task, fn -> accept_silently(listen_socket, owner) end})
 
-    "http://127.0.0.1:#{port}"
+    # Neither the API that a server on the same port left behind before, nor
+    # the API that a test remembers for this one, may outlive the server.
+    url = "http://127.0.0.1:#{port}"
+    client = Client.new(url, "secret")
+    :ok = ApiVersion.forget(client)
+    on_exit(fn -> ApiVersion.forget(client) end)
+    url
   end
 
   # Keeps every connection open, since the task owns its socket.
