@@ -2,7 +2,7 @@ defmodule EventSourcingDB do
   @moduledoc """
   `EventSourcingDB` client SDK.
 
-  The client SDK works with servers with and without the v2 API of EventSourcingDB. A client finds out which API its server offers on its first request, with a request for `/api/v2/system/ping`, and remembers the answer.
+  The client SDK works with servers with and without the v2 API of EventSourcingDB. On the first request to a server, the client SDK finds out which API the server offers, with a request for `/api/v2/system/ping`, and remembers the answer for every client of the same base URL.
 
   Over the v2 API, every read uses the HTTP method `QUERY` (RFC 10008), so a proxy in front of EventSourcingDB has to let it through. There is no fallback to `POST`.
   """

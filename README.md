@@ -42,11 +42,11 @@ If you want to verify the API token, call `verify_api_token`. If the token is in
 
 ### Talking to Servers With and Without the v2 API
 
-The client SDK works with servers that offer the v2 API of EventSourcingDB, and with servers that do not, such as EventSourcingDB 1.2. Creating a client makes no request. On its first request, the client asks the server for `GET /api/v2/system/ping`, and remembers the answer for as long as the client exists: it then talks to the server through the v2 API if the server offers it, and through the v1 API otherwise. If that first request can not find out, for example because the server is not reachable, the request fails with that error, and the next one asks again. Requests that start at the same time share a single attempt to find out.
+The client SDK works with servers that offer the v2 API of EventSourcingDB, and with servers that do not, such as EventSourcingDB 1.2. Creating a client makes no request. On the first request to a server, the client SDK asks the server for `GET /api/v2/system/ping`, and remembers the answer for every client of the same `base_url`: it then talks to the server through the v2 API if the server offers it, and through the v1 API otherwise. If that first request can not find out, for example because the server is not reachable, the request fails with that error, and the next one asks again. Requests that start at the same time share a single attempt to find out.
 
 Over the v2 API, every read uses the HTTP method `QUERY` ([RFC 10008](https://www.rfc-editor.org/rfc/rfc10008)), so a proxy in front of EventSourcingDB has to let `QUERY` requests through. There is no fallback to `POST`.
 
-*Note that a client remembers the API in a field of its struct, which copies of the struct share. So create clients with `Client.new`, since a client written as a struct literal asks the server again for every request.*
+The client SDK remembers the answers, and keeps track of the attempts to find out, in processes of its own application, `:eventsourcingdb`, which starts as a dependency of yours.
 
 ### Using HTTP/2
 
@@ -634,6 +634,12 @@ Version 2 of the client SDK talks to servers with the v2 API through it (see [Ta
 - **A request that the rate limit refuses is not retried.** Req no longer retries a `ping` that the server answers with the status `429`; it returns a `DbApiError` with the status `429` and `retry_after`.
   - Before: Req retried the `ping` three times
   - After: `{:error, %EventSourcingDB.Errors.DbApiError{status: 429, retry_after: seconds}}`
-- **A client asks for the API of the server on its first request.** The first request of a client is preceded by `GET /api/v2/system/ping`, and reads over the v2 API use the method `QUERY`, which a proxy in front of EventSourcingDB has to let through. Over the v2 API, an error about a read itself, such as a malformed subject, arrives within the stream, so it is raised once you enumerate the stream.
+- **`EventType.new/1` reads the fields of the v2 API.** It takes the type from `"type"` and whether the type has events from `"hasEvents"`, so a map with the fields of the v1 API, `"eventType"` and `"isPhantom"`, results in an event type whose `type` and `has_events` are `nil`.
+  - Before: `EventSourcingDB.EventType.new(%{"eventType" => type, "isPhantom" => false})`
+  - After: `EventSourcingDB.EventType.new(%{"type" => type, "hasEvents" => true})`
+- **The client SDK starts an application of its own.** `:eventsourcingdb` now has an application module, which starts the processes that remember the API of each server and keep track of the attempts to find it out, and attaches a handler to the telemetry events of Finch, which tell whether a write that failed was sent. Mix starts it as a dependency, so this only matters for code that does not start the applications of its dependencies.
+  - Before: `:eventsourcingdb` started no processes
+  - After: `:eventsourcingdb` starts its supervisor, `EventSourcingDB.Supervisor`
+- **The client SDK asks a server for its API on the first request to it.** The first request to a server is preceded by `GET /api/v2/system/ping`, and reads over the v2 API use the method `QUERY`, which a proxy in front of EventSourcingDB has to let through. Over the v2 API, an error about a read itself, such as a malformed subject, arrives within the stream, so it is raised once you enumerate the stream.
   - Before: `EventSourcingDB.read_events(client, "malformed")` returned `{:error, %EventSourcingDB.Errors.ApiError{}}`
   - After: over the v2 API, `{:ok, events}`, and `Enum.to_list(events)` raises an `EventSourcingDB.Errors.DbApiError` with the code `EventSourcingDB.ErrorCode.subject_malformed()`
