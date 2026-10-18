@@ -86,13 +86,20 @@ defmodule EventSourcingDB.Transport.V1 do
     with {:ok, body} <- request(client, :post, "/api/v1/register-event-schema", body) do
       case body do
         %{"type" => "io.eventsourcingdb.api.event-schema-registered"} ->
-          {:ok, ManagementEvent.new(body)}
+          {:ok, ManagementEvent.new(Map.update(body, "data", nil, &schema_registered/1))}
 
         _other ->
           {:error, %InvalidEventType{}}
       end
     end
   end
+
+  # The v1 API names the type of the schema eventType.
+  defp schema_registered(%{"eventType" => type} = data) do
+    data |> Map.delete("eventType") |> Map.put("type", type)
+  end
+
+  defp schema_registered(data), do: data
 
   @impl true
   def read_event_type(client, event_type) do
@@ -204,5 +211,13 @@ defmodule EventSourcingDB.Transport.V1 do
     Event.new(payload, line |> RawJSON.member("payload") |> RawJSON.member("data"))
   end
 
-  defp event_type(payload), do: EventType.new(payload)
+  # The v1 API names the type eventType, and tells whether the type has no
+  # events but only a schema as isPhantom.
+  defp event_type(payload) do
+    %EventType{
+      type: payload["eventType"],
+      has_events: not payload["isPhantom"],
+      schema: payload["schema"]
+    }
+  end
 end

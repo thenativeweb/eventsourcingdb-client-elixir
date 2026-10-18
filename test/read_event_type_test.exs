@@ -44,7 +44,7 @@ defmodule EventSourcingDBTest.ReadEventType do
     result = EventSourcingDB.read_event_type!(client, "io.eventsourcingdb.test.foo")
 
     assert match?(
-             %EventType{event_type: "io.eventsourcingdb.test.foo", is_phantom: false},
+             %EventType{type: "io.eventsourcingdb.test.foo", has_events: true},
              result
            )
   end

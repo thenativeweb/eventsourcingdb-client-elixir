@@ -26,7 +26,11 @@ defmodule EventSourcingDBTest.RegisterEventSchema do
         "required" => ["id", "name"]
       })
 
-    assert match?({:ok, _}, result)
+    assert {:ok, %EventSourcingDB.ManagementEvent{} = event} = result
+    assert event.type == "io.eventsourcingdb.api.event-schema-registered"
+    assert event.data["type"] == "io.eventsourcingdb.test"
+    assert event.data["schema"]["required"] == ["id", "name"]
+    refute Map.has_key?(event.data, "eventType")
   end
 
   test "register invalid schema", %{esdb: esdb} do
