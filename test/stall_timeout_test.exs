@@ -10,7 +10,6 @@ end
 defmodule EventSourcingDBTest.StallTimeout do
   alias EventSourcingDB.Client
   alias EventSourcingDB.Errors.ApiError
-  alias EventSourcingDB.Errors.HeartbeatTimeout
   alias EventSourcingDB.Errors.TransmissionError
   alias EventSourcingDBTest.StreamServer
   import EventSourcingDBTest.Utils
@@ -41,14 +40,9 @@ defmodule EventSourcingDBTest.StallTimeout do
   @timeout_error %TransmissionError{reason: %Req.TransportError{reason: :timeout}}
 
   describe "the client" do
-    test "waits 30 seconds by default" do
-      assert Client.new("http://localhost:3000", "secret").stall_timeout == 30_000
+    test "sets no stall timeout by default, and does not take one from the req_options" do
+      assert Client.new("http://localhost:3000", "secret").stall_timeout == nil
 
-      assert Client.new(base_url: "http://localhost:3000", api_token: "secret").stall_timeout ==
-               30_000
-    end
-
-    test "waits for the receive timeout that it passes on to Req, if it sets no stall timeout" do
       client =
         Client.new(
           base_url: "http://localhost:3000",
@@ -56,10 +50,10 @@ defmodule EventSourcingDBTest.StallTimeout do
           req_options: [receive_timeout: 60_000]
         )
 
-      assert client.stall_timeout == 60_000
+      assert client.stall_timeout == nil
     end
 
-    test "waits for the stall timeout, even if it passes a receive timeout on to Req" do
+    test "keeps the stall timeout, even if it passes a receive timeout on to Req" do
       client =
         Client.new(
           base_url: "http://localhost:3000",
@@ -267,24 +261,61 @@ defmodule EventSourcingDBTest.StallTimeout do
     assert elapsed < @stall_timeout
   end
 
-  test "ends observing events after the receive timeout that the client passes on to Req, if it sets no stall timeout" do
+  test "keeps observing events while heartbeats arrive less often than the receive timeout that the client passes on to Req" do
     receive_timeout = div(@stall_timeout, 2)
 
     client =
       StreamServer.start(
         fn socket ->
           StreamServer.send_head(socket)
-          StreamServer.send_line(socket, %{"type" => "heartbeat", "payload" => %{}})
+
+          for _ <- 1..4 do
+            StreamServer.send_line(socket, %{"type" => "heartbeat", "payload" => %{}})
+            Process.sleep(receive_timeout + @interval)
+          end
+
+          StreamServer.send_line(socket, %{"type" => "row", "payload" => 1})
         end,
         req_options: [receive_timeout: receive_timeout]
       )
 
     {result, elapsed} =
       StreamServer.run_with_guard(fn ->
-        EventSourcingDB.observe_events!(client, "/test") |> Enum.to_list()
+        EventSourcingDB.run_eventql_query!(client, "FROM e IN events PROJECT INTO 1")
+        |> Enum.take(1)
       end)
 
-    assert {:raised, %HeartbeatTimeout{}} = result
+    assert result == {:ok, [1]}
+    assert elapsed >= 4 * receive_timeout
+  end
+
+  test "keeps Req's connect timeout if the client sets no stall timeout, even if it passes a receive timeout on to Req" do
+    assert ping_reporting_connect_options(req_options: [receive_timeout: div(@stall_timeout, 2)]) ==
+             :ok
+
+    assert_received {:connect_options, nil}
+  end
+
+  test "bounds connecting with the stall timeout if the client sets one" do
+    assert ping_reporting_connect_options(
+             req_options: [receive_timeout: div(@stall_timeout, 2)],
+             stall_timeout: @stall_timeout
+           ) == :ok
+
+    assert_received {:connect_options, [timeout: @stall_timeout]}
+  end
+
+  test "fails to ping after the receive timeout of the req_options that the client was given after it was created" do
+    receive_timeout = div(@stall_timeout, 2)
+    client = StreamServer.start(fn _socket -> :ok end)
+    client = %{client | req_options: client.req_options ++ [receive_timeout: receive_timeout]}
+
+    {result, elapsed} =
+      StreamServer.run_with_guard(fn ->
+        EventSourcingDB.ping(client)
+      end)
+
+    assert result == {:ok, {:error, @timeout_error}}
     assert elapsed >= receive_timeout
     assert elapsed < @stall_timeout
   end
@@ -403,6 +434,38 @@ defmodule EventSourcingDBTest.StallTimeout do
       assert_receive {:DOWN, ^monitor, :process, ^caller, :killed}
       assert_receive {:stream_server, :closed}, 1_000
     end
+  end
+
+  # Pings a server that answers, and sends the connection options of the
+  # request to the calling process.
+  defp ping_reporting_connect_options(options) do
+    test_process = self()
+
+    report_connect_options = fn req ->
+      Req.Request.prepend_request_steps(req,
+        report_connect_options: fn request ->
+          send(
+            test_process,
+            {:connect_options, Req.Request.get_option(request, :connect_options)}
+          )
+
+          request
+        end
+      )
+    end
+
+    options =
+      Keyword.update!(options, :req_options, &(&1 ++ [plugins: [report_connect_options]]))
+
+    StreamServer.start(
+      fn socket ->
+        StreamServer.send_head(socket, 200, @json_headers)
+        StreamServer.send_data(socket, Jason.encode!(@ping_received))
+        StreamServer.send_end(socket)
+      end,
+      options
+    )
+    |> EventSourcingDB.ping()
   end
 
   # Sends the process that runs the steps of a request, and what it holds, to

@@ -146,18 +146,23 @@ defmodule EventSourcingDBTest.StreamServer do
   defp req_options(:http2), do: [connect_options: [protocols: [:http2]]]
 
   # Req starts a Finch pool for connection options of their own, which the
-  # client completes with the stall timeout as the connect timeout. An HTTP/2
-  # pool reconnects once the server is gone, and logs a warning whenever that
-  # fails, so the pool is stopped after the test.
+  # client completes with its stall timeout, if it sets one, as the connect
+  # timeout. An HTTP/2 pool reconnects once the server is gone, and logs a
+  # warning whenever that fails, so the pool is stopped after the test.
   defp stop_pool(client) do
     if Keyword.has_key?(client.req_options, :connect_options) do
       client.req_options
-      |> Keyword.update!(:connect_options, &Keyword.put_new(&1, :timeout, client.stall_timeout))
+      |> Keyword.update!(:connect_options, &put_connect_timeout(&1, client.stall_timeout))
       |> Req.Finch.pool_options()
       |> Req.Finch.pool_name()
       |> Finch.stop_pool(URI.to_string(client.base_url))
     end
   end
+
+  defp put_connect_timeout(connect_options, nil), do: connect_options
+
+  defp put_connect_timeout(connect_options, stall_timeout),
+    do: Keyword.put_new(connect_options, :timeout, stall_timeout)
 
   defp serve(owner, script, protocol) do
     {:ok, listen_socket} = :gen_tcp.listen(0, [:binary, active: false, reuseaddr: true])

@@ -559,6 +559,8 @@ defmodule EventSourcingDB do
   # region Requests
   #
 
+  @default_stall_timeout 30_000
+
   @spec request_stream!(Client.t(), struct()) :: stream_response!(any())
   defp request_stream!(client, request) do
     result = request_stream(client, request)
@@ -574,7 +576,10 @@ defmodule EventSourcingDB do
     req = build_request(client, request)
     heartbeats? = get_request_module(request).heartbeats?()
 
-    case open_stream(req, Client.stall_timeout(client), heartbeats?) do
+    timeout =
+      if heartbeats?, do: heartbeat_timeout(client), else: receive_timeout(client, req)
+
+    case open_stream(req, timeout, heartbeats?) do
       {:ok, response, timeout} ->
         # The resource receives the lines of the response, and keeps the start
         # of a line that has not arrived completely yet next to the response.
@@ -761,6 +766,20 @@ defmodule EventSourcingDB do
     Req.cancel_async_response(response)
   end
 
+  # How long observing events and running EventQL queries, which receive a
+  # heartbeat every second, wait for anything to arrive: the stall timeout of
+  # the client, or else 30 seconds, as the heartbeat timeout always was.
+  defp heartbeat_timeout(client), do: client.stall_timeout || @default_stall_timeout
+
+  # How long every other request waits for anything to arrive: the stall
+  # timeout of the client, or else the receive timeout that the client passes
+  # on to Req, as it always has, including :infinity, or else 30 seconds. The
+  # options of the client are read for every request, so that a client whose
+  # options change behaves accordingly.
+  defp receive_timeout(client, req) do
+    client.stall_timeout || Req.Request.get_option(req, :receive_timeout, @default_stall_timeout)
+  end
+
   # Finch bounds each wait for data with the receive timeout only in an HTTP/1
   # pool, and the whole request in an HTTP/2 pool. Req starts an HTTP/2 pool if
   # the protocols leave out HTTP/1 (with both, the protocol is negotiated per
@@ -849,12 +868,13 @@ defmodule EventSourcingDB do
 
     # A request with a single answer runs in the calling process. Finch bounds
     # each wait for data with the receive timeout there, and connecting with the
-    # connect timeout (see build_request/2), so the stall timeout bounds both.
+    # connect timeout (see build_request/2).
+    req = build_request(client, request)
+
     response =
-      client
-      |> build_request(request)
-      |> Req.request(
-        [receive_timeout: Client.stall_timeout(client)] ++ request_module.request_options()
+      Req.request(
+        req,
+        [receive_timeout: receive_timeout(client, req)] ++ request_module.request_options()
       )
 
     # credo warns the last two statements have the same error signature and can
@@ -1046,16 +1066,17 @@ defmodule EventSourcingDB do
       ]
       |> Keyword.merge(build_body_opts(request, method))
       |> Keyword.merge(client.req_options)
-      |> put_connect_timeout(Client.stall_timeout(client))
+      |> put_connect_timeout(client.stall_timeout)
 
     Req.new(opts)
   end
 
-  # Connecting counts toward the stall timeout, so it bounds connecting as well,
-  # unless the client sets a connect timeout of its own. A pool that the client
-  # brings by name is connected as its options say.
+  # Connecting counts toward a stall timeout that the client sets, so it bounds
+  # connecting as well, unless the client sets a connect timeout of its own.
+  # Without a stall timeout, Req's connect timeout stays, and a pool that the
+  # client brings by name is connected as its options say.
   defp put_connect_timeout(opts, stall_timeout) do
-    if Keyword.has_key?(opts, :finch) do
+    if stall_timeout == nil or Keyword.has_key?(opts, :finch) do
       opts
     else
       Keyword.update(
