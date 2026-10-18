@@ -15,7 +15,7 @@ The package can be installed by adding `eventsourcingdb` to your list of depende
 ```elixir
 def deps do
   [
-    {:eventsourcingdb, "~> 1.2.6"}
+    {:eventsourcingdb, "~> 1.2.7"}
   ]
 end
 ```
