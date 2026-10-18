@@ -217,7 +217,9 @@ defmodule EventSourcingDB.Transport.V1 do
   end
 
   # The v1 API always reads recursively, from the subject on, so reading the
-  # subject alone keeps only the subject itself.
+  # subject alone keeps only the subject itself, as the server normalizes it:
+  # a slash, followed by the subject without its leading and trailing
+  # slashes.
   @impl true
   def read_subjects(client, subject, recursive) do
     result =
@@ -228,8 +230,12 @@ defmodule EventSourcingDB.Transport.V1 do
       )
 
     case result do
-      {:ok, subjects} when not recursive -> {:ok, Stream.filter(subjects, &(&1 == subject))}
-      result -> result
+      {:ok, subjects} when not recursive ->
+        normalized = "/" <> String.trim(subject, "/")
+        {:ok, Stream.filter(subjects, &(&1 == normalized))}
+
+      result ->
+        result
     end
   end
 

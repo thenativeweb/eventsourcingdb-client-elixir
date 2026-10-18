@@ -235,6 +235,32 @@ defmodule EventSourcingDBTest.ApiV1 do
       assert Jason.decode!(body) == %{"baseSubject" => "/books"}
     end
 
+    for {subject, subjects, expected} <- [
+          {"/books/", ["/books", "/books/42"], ["/books"]},
+          {"/books/42/", ["/books/42", "/books/42/pages"], ["/books/42"]},
+          {"/", ["/", "/books", "/books/42"], ["/"]}
+        ] do
+      @subject subject
+      @subjects subjects
+      @expected expected
+
+      test "keeps the subject #{inspect(subject)} alone as the server normalizes it, if it does not read recursively" do
+        client = serve_subjects(@subjects)
+
+        {result, _elapsed} =
+          StreamServer.run_with_guard(fn ->
+            EventSourcingDB.read_subjects!(client, @subject, %ReadSubjectsOptions{
+              recursive: false
+            })
+            |> Enum.to_list()
+          end)
+
+        assert result == {:ok, @expected}
+        assert_receive {:stream_server, :request, "POST /api/v1/read-subjects HTTP/1.1", body}
+        assert Jason.decode!(body) == %{"baseSubject" => @subject}
+      end
+    end
+
     test "keeps every subject if it reads recursively" do
       subjects = ["/books", "/books/42", "/books/42/pages", "/books/43"]
       client = serve_subjects(subjects)

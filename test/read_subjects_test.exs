@@ -50,6 +50,18 @@ defmodule EventSourcingDBTest.ReadSubjects do
              EventSourcingDB.read_subjects!(client, "/other", @not_recursive) |> Enum.to_list()
   end
 
+  test "reads the given subject alone as the server normalizes it, with a trailing slash", %{
+    esdb: esdb
+  } do
+    client = TestContainer.get_client(esdb)
+    write_test_events(client)
+
+    assert ["/test"] ==
+             EventSourcingDB.read_subjects!(client, "/test/", @not_recursive) |> Enum.to_list()
+
+    assert ["/"] == EventSourcingDB.read_subjects!(client, "/", @not_recursive) |> Enum.to_list()
+  end
+
   test "refuses to read subjects without options that say whether to read recursively", %{
     esdb: esdb
   } do
