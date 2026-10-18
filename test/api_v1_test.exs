@@ -18,19 +18,24 @@ defmodule EventSourcingDBTest.ApiV1 do
   # The behavior of the client SDK that only servers without the v2 API show.
 
   # The texts of the errors as EventSourcingDB 1.2 sends them.
-  @state_conflict "state conflict: precondition failed\n"
-  @schema_violated "schema conflict: event candidate does not match schema: expected string, but got number\n"
-  @schema_exists "schema conflict: schema already exists\n"
-  @schema_conflicts_with_events "schema conflict: event with ID 0: missing properties: 'b'\n"
+  @precondition_failed "state conflict: precondition failed\n"
+  @capacity_exceeded "state conflict: exceeded max store capacity\n"
+  @range_unsatisfiable "state conflict: fromLatestEvent results in an event ID greater than upperBound ID\n"
+  @candidate_violates_schema "schema conflict: event candidate does not match schema: expected string, but got number\n"
+  @schema_already_exists "schema conflict: schema already exists\n"
+  @events_violate_schema "schema conflict: event with ID 0: missing properties: 'b'\n"
   @event_type_not_found "event type 'io.eventsourcingdb.test' not found\n"
   @read_only "the current operation mode conflicts with the given request: writing is not permitted\n"
   @license_expired "insufficient storage\n"
 
   describe "the code of an error" do
     for {call, status, text, code} <- [
-          {:write_events, 409, @state_conflict, :precondition_violated},
-          {:write_events, 409, @schema_violated, :event_schema_violated},
-          {:register_event_schema, 409, @schema_exists, :event_schema_already_registered},
+          {:write_events, 409, @precondition_failed, :precondition_violated},
+          {:write_events, 409, @capacity_exceeded, :capacity_exceeded},
+          {:write_events, 409, @candidate_violates_schema, :event_schema_violated},
+          {:register_event_schema, 409, @schema_already_exists, :event_schema_already_registered},
+          {:register_event_schema, 409, @events_violate_schema, :event_schema_violated},
+          {:read_events, 409, @range_unsatisfiable, :range_unsatisfiable},
           {:read_event_type, 404, @event_type_not_found, :event_type_unknown},
           {:write_events, 503, @read_only, :store_read_only},
           {:register_event_schema, 503, @read_only, :store_read_only},
@@ -55,13 +60,17 @@ defmodule EventSourcingDBTest.ApiV1 do
     end
 
     for {call, status, text} <- [
-          {:register_event_schema, 409, @schema_conflicts_with_events},
+          {:write_events, 409, "state conflict: something else\n"},
+          {:write_events, 409, "schema conflict: something else\n"},
+          {:write_events, 409, @schema_already_exists},
+          {:register_event_schema, 409, @candidate_violates_schema},
+          {:read_events, 409, @precondition_failed},
+          {:read_event_type, 409, @precondition_failed},
           {:write_events, 404, "404 page not found\n"},
           {:read_events, 404, "404 page not found\n"},
           {:register_event_schema, 507, @license_expired},
           {:write_events, 400, "bad request\n"},
-          {:write_events, 503, "server is shutting down\n"},
-          {:read_event_type, 409, @state_conflict}
+          {:write_events, 503, "server is shutting down\n"}
         ] do
       @call call
       @status status

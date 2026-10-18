@@ -135,7 +135,13 @@ defmodule EventSourcingDB.Transport.V1 do
 
   # The v1 API reports an error as a status and a text, without a code. For
   # the errors that clearly match a code of the v2 API, the error gets that
-  # code, as the texts of EventSourcingDB 1.2 tell them apart.
+  # code, as the start of the texts of EventSourcingDB 1.2 tells them apart.
+  @precondition_failed "state conflict: precondition failed"
+  @capacity_exceeded "state conflict: exceeded max store capacity"
+  @range_unsatisfiable "state conflict: fromLatestEvent results in an event ID greater than upperBound ID"
+  @candidate_violates_schema "schema conflict: event candidate does not match schema"
+  @schema_already_exists "schema conflict: schema already exists"
+  @events_violate_schema "schema conflict: event with ID"
   @operation_mode_conflict "the current operation mode conflicts with the given request"
 
   defp status_error(operation, response, text) do
@@ -144,18 +150,24 @@ defmodule EventSourcingDB.Transport.V1 do
 
   defp code(_operation, 503, @operation_mode_conflict <> _rest), do: ErrorCode.store_read_only()
 
-  defp code(:write_events, 409, "state conflict" <> _rest),
+  defp code(:write_events, 409, @precondition_failed <> _rest),
     do: ErrorCode.precondition_violated()
 
-  defp code(:write_events, 409, "schema conflict" <> _rest),
+  defp code(:write_events, 409, @capacity_exceeded <> _rest), do: ErrorCode.capacity_exceeded()
+
+  defp code(:write_events, 409, @candidate_violates_schema <> _rest),
     do: ErrorCode.event_schema_violated()
 
   defp code(:write_events, 507, _text), do: ErrorCode.license_invalid()
 
-  defp code(:register_event_schema, 409, text) do
-    if String.trim_trailing(text, "\n") == "schema conflict: schema already exists",
-      do: ErrorCode.event_schema_already_registered()
-  end
+  defp code(:register_event_schema, 409, @schema_already_exists <> _rest),
+    do: ErrorCode.event_schema_already_registered()
+
+  defp code(:register_event_schema, 409, @events_violate_schema <> _rest),
+    do: ErrorCode.event_schema_violated()
+
+  defp code(:read_events, 409, @range_unsatisfiable <> _rest),
+    do: ErrorCode.range_unsatisfiable()
 
   defp code(:read_event_type, 404, _text), do: ErrorCode.event_type_unknown()
   defp code(_operation, _status, _text), do: nil
