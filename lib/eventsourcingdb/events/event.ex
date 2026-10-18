@@ -89,8 +89,8 @@ defmodule EventSourcingDB.Event do
           :ok | {:error, HashVerificationFailed.t()} | {:error, UnsupportedHashVersion.t()}
   def verify_hash(event) do
     case hash_version(event.hash) do
-      :v1 -> compare_hash(event, compute_hash_v1(event))
-      :v2 -> compare_hash(event, compute_hash_v2(event))
+      :v1 -> verify_hash_with(event, &compute_hash_v1/2)
+      :v2 -> verify_hash_with(event, &compute_hash_v2/2)
       {:unsupported, version} -> {:error, %UnsupportedHashVersion{version: version}}
     end
   end
@@ -104,6 +104,20 @@ defmodule EventSourcingDB.Event do
 
   defp hash_version(_hash), do: :v1
 
+  # The text of the data, as the server sent it, is hashed only if it holds
+  # the data of the event, so that changing the data fails the verification,
+  # whether the event keeps that text or not.
+  defp verify_hash_with(event, compute_hash) do
+    case data_text(event) do
+      {:ok, data_text} ->
+        compare_hash(event, compute_hash.(event, data_text))
+
+      :mismatch ->
+        actual = compute_hash.(event, Jason.encode!(event.data))
+        {:error, %HashVerificationFailed{expected: event.hash, actual: actual}}
+    end
+  end
+
   defp compare_hash(event, computed_hash) do
     if computed_hash == event.hash do
       :ok
@@ -114,19 +128,19 @@ defmodule EventSourcingDB.Event do
 
   # Version 1 hashes the hash of the metadata, joined by vertical bars, and the
   # hash of the data together. It covers neither traceparent nor tracestate.
-  defp compute_hash_v1(event) do
+  defp compute_hash_v1(event, data_text) do
     metadata =
       "#{event.specversion}|#{event.id}|#{event.predecessorhash}|#{event.time}|#{event.source}|#{event.subject}|#{event.type}|#{event.datacontenttype}"
 
     metadata_hash = sha256_hex(metadata)
-    data_hash = sha256_hex(encode_data(event))
+    data_hash = sha256_hex(data_text)
 
     sha256_hex("#{metadata_hash}#{data_hash}")
   end
 
   # Version 2 hashes the prefix and every field, each on a line of its own,
   # without a line feed after the last one, and a missing field as a dash.
-  defp compute_hash_v2(event) do
+  defp compute_hash_v2(event, data_text) do
     input =
       Enum.join(
         [
@@ -141,7 +155,7 @@ defmodule EventSourcingDB.Event do
           event.datacontenttype,
           event.traceparent || @missing_field,
           event.tracestate || @missing_field,
-          encode_data(event)
+          data_text
         ],
         "\n"
       )
@@ -150,11 +164,18 @@ defmodule EventSourcingDB.Event do
   end
 
   # Both versions hash the data exactly as the server sent it, which an event
-  # that the client SDK received keeps as text. An event that was made
-  # otherwise, for example with new/1, has only its decoded data, so it is
-  # hashed as Jason encodes it again.
-  defp encode_data(%Event{__raw_data__: raw_data}) when is_binary(raw_data), do: raw_data
-  defp encode_data(event), do: Jason.encode!(event.data)
+  # that the client SDK received keeps as text, as long as that text holds the
+  # data of the event. An event that was made otherwise, for example with
+  # new/1, has only its decoded data, so it is hashed as Jason encodes it
+  # again.
+  defp data_text(%Event{__raw_data__: raw_data, data: data}) when is_binary(raw_data) do
+    case Jason.decode(raw_data) do
+      {:ok, ^data} -> {:ok, raw_data}
+      _other -> :mismatch
+    end
+  end
+
+  defp data_text(event), do: {:ok, Jason.encode!(event.data)}
 
   defp sha256_hex(value) do
     :crypto.hash(:sha256, value) |> Base.encode16(case: :lower)

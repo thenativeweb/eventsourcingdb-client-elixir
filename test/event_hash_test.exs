@@ -59,6 +59,32 @@ defmodule EventSourcingDBTest.EventHash do
         assert Event.verify_hash(event) == :ok
       end
 
+      test "fails to verify for an event that the client SDK returns, if its data was changed" do
+        client =
+          StreamServer.start(fn socket ->
+            StreamServer.send_head(socket)
+            StreamServer.send_data(socket, ~s({"type":"event","payload":#{@event_json}}\n))
+            StreamServer.send_end(socket)
+          end)
+
+        [event] = EventSourcingDB.read_events!(client, "/books/42") |> Enum.to_list()
+        tampered = %{event | data: Map.put(event.data, "title", "Tom & Jerry")}
+
+        assert {:error, %HashVerificationFailed{expected: expected, actual: actual}} =
+                 Event.verify_hash(tampered)
+
+        assert expected == event.hash
+        assert actual != expected
+
+        {public_key, _private_key} = :crypto.generate_key(:eddsa, :ed25519)
+        signed = %{tampered | signature: "esdb:signature:v1:" <> String.duplicate("b", 128)}
+
+        assert {:error, %HashVerificationFailed{}} = Event.verify_signature(signed, public_key)
+
+        assert {:error, %HashVerificationFailed{}} =
+                 Event.verify_hash(%{event | __raw_data__: "{}"})
+      end
+
       test "falls back to the data as Jason encodes it again for an event made with new/1" do
         event = @event_json |> Jason.decode!() |> Event.new()
 
