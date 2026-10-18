@@ -404,7 +404,7 @@ end
 
 ## Verifying an Event's Hash
 
-To verify the integrity of an event, call the `Event.verify_hash` function on the event. This recomputes the event's hash locally and compares it to the hash stored in the event. If the hashes differ, the function returns an error:
+To verify the integrity of an event, call the `Event.verify_hash` function on the event. This recomputes the event's hash locally and compares it to the hash stored in the event. If the hashes differ, the function returns an `EventSourcingDB.Errors.HashVerificationFailed` error:
 
 ```elixir
 alias EventSourcingDB.Event
@@ -415,13 +415,15 @@ case Event.verify_hash(event) do
 end
 ```
 
+The hash tells which version of the hash it is, and an event keeps the version it was written with: a hash that starts with `esdb:hash:v2:` is of version 2, which EventSourcingDB writes since version 1.3, and a hash without such a prefix is of version 1. The function verifies both. A hash whose prefix names a version that this client SDK does not know, such as `esdb:hash:v3:`, can not be verified, so the function returns an `EventSourcingDB.Errors.UnsupportedHashVersion` error, which names the version, rather than report the event as tampered with.
+
 *Note that this only verifies the hash. If you also want to verify the signature, you can skip this step and call `verify_signature` directly, which performs a hash verification internally.*
 
 ## Verifying an Event's Signature
 
 To verify the authenticity of an event, call the `Event.verify_signature` function on the event. This requires the public key that matches the private key used for signing on the server.
 
-The function first verifies the event's hash, and then checks the signature. If any verification step fails, it returns an error:
+The function first verifies the event's hash, and then checks the signature. If any verification step fails, it returns an error, for example an `EventSourcingDB.Errors.HashVerificationFailed` error if the hash is invalid, an `EventSourcingDB.Errors.UnsupportedHashVersion` error if the hash is of a version that this client SDK does not know, or an `EventSourcingDB.Errors.SignatureVerificationFailed` error if the signature is invalid:
 
 ```elixir
 alias EventSourcingDB.Event

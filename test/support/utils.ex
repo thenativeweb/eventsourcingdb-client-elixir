@@ -67,7 +67,7 @@ defmodule EventSourcingDBTest.Utils do
     assert event.datacontenttype == "application/json",
            "Data content type should be application/json"
 
-    assert String.length(event.hash) == 64, "Hash should be present"
+    assert event.hash =~ ~r/^(esdb:hash:v2:)?[a-f0-9]{64}$/, "Hash should be present"
     assert not is_nil(event.id), "ID should be present"
     assert not is_nil(event.predecessorhash), "Previous hash should be present"
     assert event.specversion == "1.0", "Spec version should be 1.0"

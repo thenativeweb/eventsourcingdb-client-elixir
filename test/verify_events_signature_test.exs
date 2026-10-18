@@ -91,4 +91,25 @@ defmodule EventSourcingDBTest.VerifyEventsSignature do
 
     assert :ok == Event.verify_signature(event, verification_key)
   end
+
+  test "verify event signatures of read events", %{esdb: esdb} do
+    client = TestContainer.get_client(esdb)
+    verification_key = TestContainer.get_verification_key(esdb)
+
+    EventSourcingDB.write_events!(client, [
+      create_test_eventcandidate("/test", %{"value" => 1}),
+      create_test_eventcandidate("/test", %{"value" => 2},
+        traceparent: "00-01234567012345670123456701234567-0123456701234567-00",
+        tracestate: "state=12345"
+      )
+    ])
+
+    events = EventSourcingDB.read_events!(client, "/test") |> Enum.to_list()
+
+    assert length(events) == 2
+
+    for event <- events do
+      assert :ok == Event.verify_signature(event, verification_key)
+    end
+  end
 end

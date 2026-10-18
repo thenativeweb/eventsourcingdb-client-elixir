@@ -20,6 +20,40 @@ defmodule EventSourcingDBTest.VerifyEvents do
     assert :ok == Event.verify_hash(Enum.at(written, 0))
   end
 
+  test "verify event hash with traceparent and tracestate", %{esdb: esdb} do
+    client = TestContainer.get_client(esdb)
+
+    event_candidate =
+      create_test_eventcandidate("/test", %{"value" => 1},
+        traceparent: "00-01234567012345670123456701234567-0123456701234567-00",
+        tracestate: "state=12345"
+      )
+
+    written =
+      EventSourcingDB.write_events!(client, [event_candidate])
+
+    assert :ok == Event.verify_hash(Enum.at(written, 0))
+  end
+
+  test "verify event hashes of read events", %{esdb: esdb} do
+    client = TestContainer.get_client(esdb)
+
+    EventSourcingDB.write_events!(client, [
+      create_test_eventcandidate("/test", %{"value" => 1}),
+      create_test_eventcandidate("/test", %{"value" => 2},
+        traceparent: "00-01234567012345670123456701234567-0123456701234567-00"
+      )
+    ])
+
+    events = EventSourcingDB.read_events!(client, "/test") |> Enum.to_list()
+
+    assert length(events) == 2
+
+    for event <- events do
+      assert :ok == Event.verify_hash(event)
+    end
+  end
+
   test "verify broken event hash", %{esdb: esdb} do
     client = TestContainer.get_client(esdb)
 
