@@ -65,8 +65,9 @@ defmodule EventSourcingDB.Transport.HTTP do
   #   * :heartbeats? - whether the server sends a heartbeat every second while
   #     it has nothing else to send
   #   * :ending - how the server ends the stream: :response, if the end of the
-  #     response ends it, or :end_item, if an end item ends it, which the
-  #     server then must not leave out
+  #     response ends it, :end_item, if an end item ends it, which the server
+  #     then must not leave out, or :never, if the server never ends it, as
+  #     for observing events, so that the end of the response is a failure
   #   * :status_error - turns an answer with another status than 200, given as
   #     the response and the text of its body, into an error
   @spec stream(Client.t(), atom(), String.t(), term(), keyword()) ::
@@ -217,7 +218,9 @@ defmodule EventSourcingDB.Transport.HTTP do
   end
 
   # A stream that the server ends with an end item fails if the response ends
-  # before that item, since the server then broke it off.
+  # before that item, and a stream that the server never ends fails if the
+  # response ends at all, since the server then broke it off. A server that
+  # shuts down says so with an error item first.
   defp finish(%{status: :open, ending: :response} = state), do: %{state | status: :ended}
   defp finish(%{status: :open} = state), do: %{state | status: {:failed, broken_off_error()}}
   defp finish(state), do: state

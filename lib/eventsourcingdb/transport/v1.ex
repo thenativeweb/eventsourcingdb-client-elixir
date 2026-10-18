@@ -194,13 +194,14 @@ defmodule EventSourcingDB.Transport.V1 do
   end
 
   # The server sends a heartbeat every second while there is nothing else to
-  # send.
+  # send, and never ends observing events.
   @impl true
   def observe_events(client, subject, options) do
     stream(client, :observe_events, "/api/v1/observe-events", subject_body(subject, options),
       type: "event",
       process: &event/2,
-      heartbeats?: true
+      heartbeats?: true,
+      ending: :never
     )
   end
 

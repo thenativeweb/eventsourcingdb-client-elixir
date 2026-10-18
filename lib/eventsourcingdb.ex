@@ -344,6 +344,8 @@ defmodule EventSourcingDB do
 
   While there are no events to deliver, EventSourcingDB sends a heartbeat every second. If neither an event nor a heartbeat arrives for the stall timeout of the client (see `EventSourcingDB.Client`), 30 seconds by default, the stream closes the connection and raises an `EventSourcingDB.Errors.ConnectionStalled` error.
 
+  Observing events never ends on its own. If the server ends the stream nonetheless without reporting an error, the stream raises an `EventSourcingDB.Errors.TransmissionError`, as when the connection fails. A server that shuts down reports that as an error first.
+
   If anything else goes wrong while you enumerate the stream, the stream closes the connection as well and raises the corresponding error: an `EventSourcingDB.Errors.DbApiError` if EventSourcingDB reports an error, an `EventSourcingDB.Errors.TransmissionError` if the connection fails, an `EventSourcingDB.Errors.InvalidResponseType` if the response contains an item of an unexpected type, or a `Jason.DecodeError` if the response is not valid JSON.
 
   ### Observing From Subjects Recursively

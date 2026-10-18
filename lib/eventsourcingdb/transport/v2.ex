@@ -166,7 +166,7 @@ defmodule EventSourcingDB.Transport.V2 do
     stream(client, "/api/v2/data/observe-events", subject_body(subject, options),
       type: "event",
       process: &event/2,
-      ending: :response
+      ending: :never
     )
   end
 

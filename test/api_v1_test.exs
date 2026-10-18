@@ -11,6 +11,7 @@ defmodule EventSourcingDBTest.ApiV1 do
   }
 
   alias EventSourcingDB.ReadSubjectsOptions
+  alias EventSourcingDB.Transport.HTTP
   alias EventSourcingDBTest.{FakeServer, StreamServer}
   import EventSourcingDBTest.Utils
   use ExUnit.Case, async: true
@@ -184,6 +185,24 @@ defmodule EventSourcingDBTest.ApiV1 do
 
       assert {:error, %DbApiError{status: 429}} = EventSourcingDB.ping(client(url))
       assert pings_received() == 1
+    end
+  end
+
+  describe "observing events" do
+    test "fails if the server ends the stream without an error" do
+      client =
+        StreamServer.start(fn socket ->
+          StreamServer.send_head(socket)
+          StreamServer.send_line(socket, %{"type" => "heartbeat", "payload" => %{}})
+          StreamServer.send_end(socket)
+        end)
+
+      {result, _elapsed} =
+        StreamServer.run_with_guard(fn ->
+          EventSourcingDB.observe_events!(client, "/test") |> Enum.to_list()
+        end)
+
+      assert result == {:raised, HTTP.broken_off_error()}
     end
   end
 

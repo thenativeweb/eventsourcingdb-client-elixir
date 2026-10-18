@@ -304,6 +304,15 @@ defmodule EventSourcingDBTest.ApiV2 do
       end
     end
 
+    test "of observing events fails if the server ends it without an error" do
+      {result, _request} =
+        run_stream(&(EventSourcingDB.observe_events!(&1, "/books") |> Enum.to_list()), [
+          event_line("0", "/books")
+        ])
+
+      assert result == {:raised, HTTP.broken_off_error()}
+    end
+
     test "raises an error that the server reports, with its code and details" do
       {result, _request} =
         run_stream(
