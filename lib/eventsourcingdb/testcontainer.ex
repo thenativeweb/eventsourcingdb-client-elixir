@@ -241,13 +241,21 @@ defmodule EventSourcingDB.TestContainer do
 
     @image_name "thenativeweb/eventsourcingdb"
 
-    # The container is ready once EventSourcingDB answers its ping, which it
-    # is given 10 seconds for. HttpWaitStrategy bounds all its attempts
-    # together, with the pauses between them, by its timeout divided by its
-    # number of retries, so the timeout is the 10 seconds times the retries.
-    # The retries are enough to keep trying for the whole 10 seconds.
-    @wait_timeout 10_000
+    # The container is ready once EventSourcingDB answers its ping, and a
+    # container that answers within 10 seconds is always found ready.
+    #
+    # HttpWaitStrategy pauses between its attempts for 0.5 seconds at first,
+    # doubling up to 5 seconds, so after the 10 seconds, another attempt
+    # follows within 5 seconds. So the wait ends after 16 seconds at the
+    # latest, which leaves that attempt a second. HttpWaitStrategy bounds all
+    # its attempts together, with the pauses between them, by its timeout
+    # divided by its number of retries, so its timeout is the 16 seconds
+    # times the retries. The retries last for longer than the 16 seconds.
+    @ready_within 10_000
+    @longest_pause 5_000
+    @last_attempt 1_000
     @wait_retries 20
+    @wait_timeout @ready_within + @longest_pause + @last_attempt
 
     @impl true
     def build(config) do

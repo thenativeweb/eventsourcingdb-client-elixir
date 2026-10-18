@@ -4,19 +4,25 @@ defmodule EventSourcingDBTest.TestContainerWait do
   use ExUnit.Case, async: true
 
   # EventSourcingDB takes a while to start when Docker is busy, so the test
-  # container waits up to 10 seconds for it to answer its ping. The test runs
-  # the wait of the test container against a local server that begins to
-  # listen only after a few seconds, as such a server does.
-  @ready_after 2_500
+  # container finds it ready whenever it answers its ping within 10 seconds.
+  # The test runs the wait of the test container against a local server that
+  # begins to listen only after some seconds, as such a server does.
+  for ready_after <- [2_500, 9_000] do
+    @ready_after ready_after
 
-  test "waits for EventSourcingDB to answer its ping for longer than a second" do
-    port = free_port()
-    start_supervised!({Task, fn -> listen_later(port, @ready_after) end})
+    test "finds EventSourcingDB ready that answers its ping after #{ready_after} milliseconds" do
+      port = free_port()
+      start_supervised!({Task, fn -> listen_later(port, @ready_after) end})
 
-    %Container{wait_strategies: [wait_strategy]} = ContainerBuilder.build(TestContainer.new())
-    container = %Container{image: "thenativeweb/eventsourcingdb", exposed_ports: [{3000, port}]}
+      %Container{wait_strategies: [wait_strategy]} = ContainerBuilder.build(TestContainer.new())
 
-    assert WaitStrategy.wait_until_container_is_ready(wait_strategy, container, nil) == :ok
+      container = %Container{
+        image: "thenativeweb/eventsourcingdb",
+        exposed_ports: [{3000, port}]
+      }
+
+      assert WaitStrategy.wait_until_container_is_ready(wait_strategy, container, nil) == :ok
+    end
   end
 
   defp free_port() do
