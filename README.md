@@ -435,6 +435,8 @@ end
 
 The hash tells which version of the hash it is, and an event keeps the version it was written with: a hash that starts with `esdb:hash:v2:` is of version 2, which EventSourcingDB writes since version 1.3, and a hash without such a prefix is of version 1. The function verifies both. A hash whose prefix names a version that this client SDK does not know, such as `esdb:hash:v3:`, can not be verified, so the function returns an `EventSourcingDB.Errors.UnsupportedHashVersion` error, which names the version, rather than report the event as tampered with.
 
+Both versions hash the data of the event exactly as EventSourcingDB sent it, byte for byte, which every event that the client SDK returns keeps for this purpose. For an event that you create yourself, for example with `Event.new/1`, only the decoded data is known, so the function encodes it again with Jason, which can differ from what EventSourcingDB sent, for example for `&`, `<`, and `>`, which EventSourcingDB escapes.
+
 *Note that this only verifies the hash. If you also want to verify the signature, you can skip this step and call `verify_signature` directly, which performs a hash verification internally.*
 
 ## Verifying an Event's Signature

@@ -112,4 +112,20 @@ defmodule EventSourcingDBTest.VerifyEventsSignature do
       assert :ok == Event.verify_signature(event, verification_key)
     end
   end
+
+  test "verify event signatures of data that Jason encodes differently", %{esdb: esdb} do
+    client = TestContainer.get_client(esdb)
+    verification_key = TestContainer.get_verification_key(esdb)
+
+    written =
+      EventSourcingDB.write_events!(client, [
+        create_test_eventcandidate("/test", %{"title" => "Tom & Jerry <b>", "pages" => 1.0e21})
+      ])
+
+    read = EventSourcingDB.read_events!(client, "/test") |> Enum.to_list()
+
+    for event <- written ++ read do
+      assert :ok == Event.verify_signature(event, verification_key)
+    end
+  end
 end

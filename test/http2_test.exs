@@ -40,7 +40,7 @@ defmodule EventSourcingDBTest.HTTP2 do
         EventSourcingDB.observe_events!(client, "/test") |> Enum.take(1)
       end)
 
-    assert result == {:ok, [Event.new(event_payload("0"))]}
+    assert result == {:ok, [expected_event("0")]}
     assert elapsed >= 4 * @stall_timeout
     assert_receive {:stream_server, :closed}, 1_000
   end
@@ -87,7 +87,7 @@ defmodule EventSourcingDBTest.HTTP2 do
         EventSourcingDB.read_events!(client, "/test") |> Enum.take(10)
       end)
 
-    assert result == {:ok, Enum.map(0..9, &Event.new(event_payload(Integer.to_string(&1))))}
+    assert result == {:ok, Enum.map(0..9, &expected_event(Integer.to_string(&1)))}
     assert elapsed >= 3 * @client_receive_timeout
     assert_receive {:stream_server, :closed}, 1_000
   end
@@ -109,7 +109,7 @@ defmodule EventSourcingDBTest.HTTP2 do
         EventSourcingDB.read_events!(client, "/test") |> Enum.to_list()
       end)
 
-    assert result == {:ok, [Event.new(event_payload("0")), Event.new(event_payload("1"))]}
+    assert result == {:ok, [expected_event("0"), expected_event("1")]}
   end
 
   test "reads an event over HTTP/2 whose line arrives in several data frames" do
@@ -131,7 +131,7 @@ defmodule EventSourcingDBTest.HTTP2 do
         EventSourcingDB.read_events!(client, "/test") |> Enum.to_list()
       end)
 
-    assert result == {:ok, [Event.new(event_payload("0"))]}
+    assert result == {:ok, [expected_event("0")]}
   end
 
   test "ends observing events over HTTP/2 with a heartbeat timeout if nothing arrives" do
@@ -320,6 +320,13 @@ defmodule EventSourcingDBTest.HTTP2 do
 
   defp event_line(id) do
     %{"type" => "event", "payload" => event_payload(id)}
+  end
+
+  # The event that the client SDK makes of the payload, which keeps the text of
+  # its data as the line carried it.
+  defp expected_event(id) do
+    payload = event_payload(id)
+    Event.new(payload, Jason.encode!(payload["data"]))
   end
 
   defp event_payload(id) do

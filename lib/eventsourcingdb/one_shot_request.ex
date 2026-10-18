@@ -5,6 +5,7 @@ defmodule EventSourcingDB.OneShotRequest do
   @callback validate_response({:ok, Req.Response.t()} | {:error, Exception.t()}) ::
               :ok | {:error, Exception.t()}
   @callback validate_body(map()) :: {:ok, any()} | {:error, Exception.t()}
+  @callback request_options() :: keyword()
 
   defmacro __using__(_opts) do
     quote do
@@ -15,6 +16,10 @@ defmodule EventSourcingDB.OneShotRequest do
 
       @impl OneShotRequest
       def validate_body(_payload), do: {:ok, nil}
+
+      # Options for Req that the request needs, on top of those of the client.
+      @impl OneShotRequest
+      def request_options(), do: []
 
       defoverridable OneShotRequest
     end

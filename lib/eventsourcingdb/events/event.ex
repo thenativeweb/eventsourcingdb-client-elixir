@@ -25,7 +25,19 @@ defmodule EventSourcingDB.Event do
   # version 2.
   @missing_field "-"
 
+  # The text of the data is the same data once more, so it stays out of
+  # inspect, and thereby out of logs.
+  @derive {Inspect, except: [:__raw_data__]}
+
   typedstruct do
+    @typedoc """
+    An event as EventSourcingDB returns it.
+
+    The field `__raw_data__` is an implementation detail and not part of the
+    stable API: an event that the client SDK received from the server holds
+    the JSON text of `data` there, exactly as it arrived, so that verifying the
+    hash can use it byte for byte.
+    """
     field :data, any(), enforce: true
     field :datacontenttype, String.t(), enforce: true
     field :hash, String.t(), enforce: true
@@ -39,11 +51,20 @@ defmodule EventSourcingDB.Event do
     field :traceparent, String.t()
     field :tracestate, String.t()
     field :type, String.t(), enforce: true
+    field :__raw_data__, String.t() | nil
   end
 
   @spec new(map()) :: Event.t()
   def new(value \\ %{}) do
     struct!(__MODULE__, value |> Map.new(fn {k, v} -> {String.to_existing_atom(k), v} end))
+  end
+
+  # Creates an event from what the server returned, and keeps the JSON text of
+  # its data as it arrived.
+  @doc false
+  @spec new(map(), String.t() | nil) :: Event.t()
+  def new(value, raw_data) do
+    %{new(value) | __raw_data__: raw_data}
   end
 
   @doc """
@@ -61,6 +82,8 @@ defmodule EventSourcingDB.Event do
   ```
 
   The hash tells which version of the hash it is, and an event keeps the version it was written with: a hash that starts with `esdb:hash:v2:` is of version 2, which EventSourcingDB writes since version 1.3, and a hash without such a prefix is of version 1. The function verifies both. A hash whose prefix names a version that this client SDK does not know, such as `esdb:hash:v3:`, can not be verified, so the function returns an `EventSourcingDB.Errors.UnsupportedHashVersion` error, which names the version, rather than report the event as tampered with.
+
+  Both versions hash the data of the event exactly as EventSourcingDB sent it, byte for byte, which every event that the client SDK returns keeps for this purpose. For an event that you create yourself, for example with `Event.new/1`, only the decoded data is known, so the function encodes it again with Jason, which can differ from what EventSourcingDB sent, for example for `&`, `<`, and `>`, which EventSourcingDB escapes.
 
   *Note that this only verifies the hash. If you also want to verify the signature, you can skip this step and call `verify_signature` directly, which performs a hash verification internally.*
   """
@@ -128,8 +151,11 @@ defmodule EventSourcingDB.Event do
     @hash_v2_prefix <> sha256_hex(input)
   end
 
-  # The event holds its data decoded, so both versions hash the data as Jason
-  # encodes it again, as the client SDK has always done for version 1.
+  # Both versions hash the data exactly as the server sent it, which an event
+  # that the client SDK received keeps as text. An event that was made
+  # otherwise, for example with new/1, has only its decoded data, so it is
+  # hashed as Jason encodes it again.
+  defp encode_data(%Event{__raw_data__: raw_data}) when is_binary(raw_data), do: raw_data
   defp encode_data(event), do: Jason.encode!(event.data)
 
   defp sha256_hex(value) do

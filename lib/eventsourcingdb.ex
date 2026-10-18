@@ -719,7 +719,7 @@ defmodule EventSourcingDB do
     json = Jason.decode(line)
 
     # evaluate message
-    result = evaluate_message(json, request)
+    result = evaluate_message(json, line, request)
 
     # process the evaluated result
     case result do
@@ -815,7 +815,7 @@ defmodule EventSourcingDB do
   defp remaining_time(:infinity), do: :infinity
   defp remaining_time(deadline), do: max(deadline - System.monotonic_time(:millisecond), 0)
 
-  defp evaluate_message(message, request) do
+  defp evaluate_message(message, line, request) do
     request_module = get_request_module(request)
     expected_type = request_module.type()
 
@@ -824,7 +824,7 @@ defmodule EventSourcingDB do
         case type do
           # This is the expected type, so we try to parse it.
           ^expected_type ->
-            {:ok, request_module.process(payload)}
+            {:ok, request_module.process(payload, line)}
 
           # Forward Errors from the DB as %DBError{}
           "error" ->
@@ -853,7 +853,9 @@ defmodule EventSourcingDB do
     response =
       client
       |> build_request(request)
-      |> Req.request(receive_timeout: Client.stall_timeout(client))
+      |> Req.request(
+        [receive_timeout: Client.stall_timeout(client)] ++ request_module.request_options()
+      )
 
     # credo warns the last two statements have the same error signature and can
     # therefore be combined. This was a design choice on purpose to have
