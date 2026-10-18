@@ -3,9 +3,10 @@ defmodule EventSourcingDBTest.RegisterEventSchema do
   alias EventSourcingDB.TestContainer
   use ExUnit.Case, async: true
 
+  import EventSourcingDBTest.Utils
   import Testcontainers.ExUnit
 
-  container(:esdb, TestContainer.new())
+  container(:esdb, test_container())
 
   test "register event schema", %{esdb: esdb} do
     client = TestContainer.get_client(esdb)

@@ -13,6 +13,9 @@ defmodule EventSourcingDBTest.StreamServer do
   # with prior knowledge), and the client uses an HTTP/2 pool. There the
   # client ends a stream by resetting it and keeps the connection, so a reset
   # counts as closing.
+  #
+  # The client waits for the server for the stall timeout given as the
+  # stall_timeout option, or for the default of the client without it.
 
   @response_headers [
     {"server", "EventSourcingDB/test"},
@@ -40,6 +43,7 @@ defmodule EventSourcingDBTest.StreamServer do
     owner = self()
     protocol = Keyword.get(options, :protocol, :http1)
     req_options = [retry: false] ++ Keyword.get(options, :req_options, req_options(protocol))
+    client_options = Keyword.take(options, [:stall_timeout])
 
     ExUnit.Callbacks.start_supervised!({Task, fn -> serve(owner, script, protocol) end})
 
@@ -47,11 +51,17 @@ defmodule EventSourcingDBTest.StreamServer do
       {:stream_server, :listening, port} ->
         base_url = "http://127.0.0.1:#{port}"
 
+        client =
+          Client.new(
+            [base_url: base_url, api_token: "secret", req_options: req_options] ++
+              client_options
+          )
+
         if protocol == :http2 do
-          ExUnit.Callbacks.on_exit(fn -> stop_pool(req_options, base_url) end)
+          ExUnit.Callbacks.on_exit(fn -> stop_pool(client) end)
         end
 
-        Client.new(base_url: base_url, api_token: "secret", req_options: req_options)
+        client
     after
       1_000 -> raise "Stream server did not start."
     end
@@ -135,17 +145,24 @@ defmodule EventSourcingDBTest.StreamServer do
   defp req_options(:http1), do: []
   defp req_options(:http2), do: [connect_options: [protocols: [:http2]]]
 
-  # Req starts a Finch pool for connection options of their own. An HTTP/2
-  # pool reconnects once the server is gone, and logs a warning whenever that
-  # fails, so the pool is stopped after the test.
-  defp stop_pool(req_options, base_url) do
-    if Keyword.has_key?(req_options, :connect_options) do
-      req_options
+  # Req starts a Finch pool for connection options of their own, which the
+  # client completes with its stall timeout, if it sets one, as the connect
+  # timeout. An HTTP/2 pool reconnects once the server is gone, and logs a
+  # warning whenever that fails, so the pool is stopped after the test.
+  defp stop_pool(client) do
+    if Keyword.has_key?(client.req_options, :connect_options) do
+      client.req_options
+      |> Keyword.update!(:connect_options, &put_connect_timeout(&1, client.stall_timeout))
       |> Req.Finch.pool_options()
       |> Req.Finch.pool_name()
-      |> Finch.stop_pool(base_url)
+      |> Finch.stop_pool(URI.to_string(client.base_url))
     end
   end
+
+  defp put_connect_timeout(connect_options, nil), do: connect_options
+
+  defp put_connect_timeout(connect_options, stall_timeout),
+    do: Keyword.put_new(connect_options, :timeout, stall_timeout)
 
   defp serve(owner, script, protocol) do
     {:ok, listen_socket} = :gen_tcp.listen(0, [:binary, active: false, reuseaddr: true])

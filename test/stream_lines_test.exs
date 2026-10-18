@@ -24,7 +24,7 @@ defmodule EventSourcingDBTest.StreamLines do
         EventSourcingDB.read_events!(client, "/test") |> Enum.take(1)
       end)
 
-    assert result == {:ok, [Event.new(event_payload("0"))]}
+    assert result == {:ok, [expected_event("0")]}
     assert_receive {:stream_server, :closed}, 1_000
   end
 
@@ -46,7 +46,7 @@ defmodule EventSourcingDBTest.StreamLines do
         EventSourcingDB.read_events!(client, "/test") |> Enum.take(1)
       end)
 
-    assert result == {:ok, [Event.new(event_payload("0", "Grüße – 1 €"))]}
+    assert result == {:ok, [expected_event("0", "Grüße – 1 €")]}
   end
 
   test "reads several lines that arrive in one block" do
@@ -65,7 +65,7 @@ defmodule EventSourcingDBTest.StreamLines do
         EventSourcingDB.observe_events!(client, "/test") |> Enum.take(2)
       end)
 
-    assert result == {:ok, [Event.new(event_payload("0")), Event.new(event_payload("1"))]}
+    assert result == {:ok, [expected_event("0"), expected_event("1")]}
     assert_receive {:stream_server, :closed}, 1_000
   end
 
@@ -103,7 +103,7 @@ defmodule EventSourcingDBTest.StreamLines do
         EventSourcingDB.read_events!(client, "/test") |> Enum.take(2)
       end)
 
-    assert result == {:ok, [Event.new(event_payload("0")), Event.new(event_payload("1"))]}
+    assert result == {:ok, [expected_event("0"), expected_event("1")]}
   end
 
   test "reads the last line up to the end of the response if it ends with a newline" do
@@ -121,7 +121,7 @@ defmodule EventSourcingDBTest.StreamLines do
         EventSourcingDB.read_events!(client, "/test") |> Enum.to_list()
       end)
 
-    assert result == {:ok, [Event.new(event_payload("0")), Event.new(event_payload("1"))]}
+    assert result == {:ok, [expected_event("0"), expected_event("1")]}
   end
 
   test "reads the last line up to the end of the response if it lacks a newline" do
@@ -139,7 +139,7 @@ defmodule EventSourcingDBTest.StreamLines do
         EventSourcingDB.read_events!(client, "/test") |> Enum.to_list()
       end)
 
-    assert result == {:ok, [Event.new(event_payload("0")), Event.new(event_payload("1"))]}
+    assert result == {:ok, [expected_event("0"), expected_event("1")]}
   end
 
   test "skips empty lines" do
@@ -158,7 +158,7 @@ defmodule EventSourcingDBTest.StreamLines do
         EventSourcingDB.read_events!(client, "/test") |> Enum.to_list()
       end)
 
-    assert result == {:ok, [Event.new(event_payload("0")), Event.new(event_payload("1"))]}
+    assert result == {:ok, [expected_event("0"), expected_event("1")]}
   end
 
   test "delivers the lines before an error that arrives in the same block" do
@@ -206,7 +206,14 @@ defmodule EventSourcingDBTest.StreamLines do
     %{"type" => "event", "payload" => event_payload(id, value)}
   end
 
-  defp event_payload(id, value \\ nil) do
+  # The event that the client SDK makes of the payload, which keeps the text of
+  # its data as the line carried it.
+  defp expected_event(id, value \\ nil) do
+    payload = event_payload(id, value)
+    Event.new(payload, Jason.encode!(payload["data"]))
+  end
+
+  defp event_payload(id, value) do
     %{
       "specversion" => "1.0",
       "id" => id,

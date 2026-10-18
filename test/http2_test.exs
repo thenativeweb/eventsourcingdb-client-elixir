@@ -7,19 +7,15 @@ defmodule EventSourcingDBTest.HTTP2 do
   alias EventSourcingDB.Event
   alias EventSourcingDBTest.StreamServer
 
-  # The heartbeat timeout is shortened through the application environment,
-  # which is global, so these tests must not run concurrently with others.
+  # These tests measure how long a stream takes, so they do not run
+  # concurrently with others.
   use ExUnit.Case, async: false
 
-  @heartbeat_timeout 500
+  @stall_timeout 500
   @heartbeat_interval 100
 
-  # Streams with heartbeats wait twice the heartbeat timeout for the response
-  # headers, which is the receive timeout over HTTP/1.
-  @receive_timeout 2 * @heartbeat_timeout
-
-  # Streams without heartbeats use the receive timeout of the client, which
-  # these tests shorten as well.
+  # A receive timeout that the client passes on to Req bounds streams without
+  # heartbeats as well, so these tests shorten it, too.
   @client_receive_timeout 300
   @client_req_options [
     connect_options: [protocols: [:http2]],
@@ -28,17 +24,12 @@ defmodule EventSourcingDBTest.HTTP2 do
 
   @heartbeat %{"type" => "heartbeat", "payload" => %{}}
 
-  setup do
-    Application.put_env(:eventsourcingdb, :heartbeat_timeout, @heartbeat_timeout)
-    on_exit(fn -> Application.delete_env(:eventsourcingdb, :heartbeat_timeout) end)
-  end
-
   test "keeps observing events over HTTP/2 while heartbeats arrive" do
     client =
-      StreamServer.start(
+      start_server(
         fn connection ->
           StreamServer.send_head(connection)
-          send_heartbeats(connection, 2 * @receive_timeout)
+          send_heartbeats(connection, 4 * @stall_timeout)
           StreamServer.send_line(connection, event_line("0"))
         end,
         protocol: :http2
@@ -49,17 +40,17 @@ defmodule EventSourcingDBTest.HTTP2 do
         EventSourcingDB.observe_events!(client, "/test") |> Enum.take(1)
       end)
 
-    assert result == {:ok, [Event.new(event_payload("0"))]}
-    assert elapsed >= 2 * @receive_timeout
+    assert result == {:ok, [expected_event("0")]}
+    assert elapsed >= 4 * @stall_timeout
     assert_receive {:stream_server, :closed}, 1_000
   end
 
   test "keeps running an EventQL query over HTTP/2 while heartbeats arrive" do
     client =
-      StreamServer.start(
+      start_server(
         fn connection ->
           StreamServer.send_head(connection)
-          send_heartbeats(connection, 2 * @receive_timeout)
+          send_heartbeats(connection, 4 * @stall_timeout)
           StreamServer.send_line(connection, row_line(1))
         end,
         protocol: :http2
@@ -72,13 +63,13 @@ defmodule EventSourcingDBTest.HTTP2 do
       end)
 
     assert result == {:ok, [1]}
-    assert elapsed >= 2 * @receive_timeout
+    assert elapsed >= 4 * @stall_timeout
     assert_receive {:stream_server, :closed}, 1_000
   end
 
   test "keeps reading events over HTTP/2 while they arrive" do
     client =
-      StreamServer.start(
+      start_server(
         fn connection ->
           StreamServer.send_head(connection)
 
@@ -96,14 +87,14 @@ defmodule EventSourcingDBTest.HTTP2 do
         EventSourcingDB.read_events!(client, "/test") |> Enum.take(10)
       end)
 
-    assert result == {:ok, Enum.map(0..9, &Event.new(event_payload(Integer.to_string(&1))))}
+    assert result == {:ok, Enum.map(0..9, &expected_event(Integer.to_string(&1)))}
     assert elapsed >= 3 * @client_receive_timeout
     assert_receive {:stream_server, :closed}, 1_000
   end
 
   test "reads events over HTTP/2 up to the end of the response" do
     client =
-      StreamServer.start(
+      start_server(
         fn connection ->
           StreamServer.send_head(connection)
           StreamServer.send_line(connection, event_line("0"))
@@ -118,14 +109,14 @@ defmodule EventSourcingDBTest.HTTP2 do
         EventSourcingDB.read_events!(client, "/test") |> Enum.to_list()
       end)
 
-    assert result == {:ok, [Event.new(event_payload("0")), Event.new(event_payload("1"))]}
+    assert result == {:ok, [expected_event("0"), expected_event("1")]}
   end
 
   test "reads an event over HTTP/2 whose line arrives in several data frames" do
     line = Jason.encode!(event_line("0")) <> "\n"
 
     client =
-      StreamServer.start(
+      start_server(
         fn connection ->
           StreamServer.send_head(connection)
           StreamServer.send_data(connection, binary_part(line, 0, 100))
@@ -140,12 +131,12 @@ defmodule EventSourcingDBTest.HTTP2 do
         EventSourcingDB.read_events!(client, "/test") |> Enum.to_list()
       end)
 
-    assert result == {:ok, [Event.new(event_payload("0"))]}
+    assert result == {:ok, [expected_event("0")]}
   end
 
   test "ends observing events over HTTP/2 with a heartbeat timeout if nothing arrives" do
     client =
-      StreamServer.start(
+      start_server(
         fn connection ->
           StreamServer.send_head(connection)
           StreamServer.send_line(connection, @heartbeat)
@@ -159,14 +150,14 @@ defmodule EventSourcingDBTest.HTTP2 do
       end)
 
     assert match?({:raised, %HeartbeatTimeout{}}, result)
-    assert elapsed >= @heartbeat_timeout
-    assert elapsed < 2 * @heartbeat_timeout
+    assert elapsed >= @stall_timeout
+    assert elapsed < 2 * @stall_timeout
     assert_receive {:stream_server, :closed}, 1_000
   end
 
   test "ends reading events over HTTP/2 with a transmission error if nothing arrives" do
     client =
-      StreamServer.start(
+      start_server(
         fn connection ->
           StreamServer.send_head(connection)
           StreamServer.send_line(connection, event_line("0"))
@@ -187,7 +178,7 @@ defmodule EventSourcingDBTest.HTTP2 do
   end
 
   test "fails to observe events over HTTP/2 if the response does not arrive" do
-    client = StreamServer.start(fn _connection -> :ok end, protocol: :http2)
+    client = start_server(fn _connection -> :ok end, protocol: :http2)
 
     {result, elapsed} =
       StreamServer.run_with_guard(fn ->
@@ -195,14 +186,14 @@ defmodule EventSourcingDBTest.HTTP2 do
       end)
 
     assert match?({:ok, {:error, %TransmissionError{}}}, result)
-    assert elapsed >= @receive_timeout
-    assert elapsed < 2 * @receive_timeout
+    assert elapsed >= @stall_timeout
+    assert elapsed < 2 * @stall_timeout
     assert_receive {:stream_server, :closed}, 1_000
   end
 
   test "raises an error from the database that arrives over HTTP/2" do
     client =
-      StreamServer.start(
+      start_server(
         fn connection ->
           StreamServer.send_head(connection)
           StreamServer.send_line(connection, @heartbeat)
@@ -226,7 +217,7 @@ defmodule EventSourcingDBTest.HTTP2 do
 
   test "leaves the other messages of the process in its mailbox while observing events over HTTP/2" do
     client =
-      StreamServer.start(
+      start_server(
         fn connection ->
           StreamServer.send_head(connection)
           StreamServer.send_line(connection, @heartbeat)
@@ -258,7 +249,7 @@ defmodule EventSourcingDBTest.HTTP2 do
 
   test "fails to read events over HTTP/2 with the text of an error response, and leaves none of its messages behind" do
     client =
-      StreamServer.start(
+      start_server(
         fn connection ->
           StreamServer.send_head(connection, 400, [
             {"server", "EventSourcingDB/test"},
@@ -286,7 +277,7 @@ defmodule EventSourcingDBTest.HTTP2 do
 
   test "fails to observe events over HTTP/2 from a server that is not EventSourcingDB, and closes the stream" do
     client =
-      StreamServer.start(
+      start_server(
         fn connection ->
           StreamServer.send_head(connection, 200, [
             {"server", "SomethingElse/1.0"},
@@ -310,6 +301,11 @@ defmodule EventSourcingDBTest.HTTP2 do
     assert_receive {:stream_server, :closed}, 1_000
   end
 
+  # Every client of these tests waits for the server for the stall timeout.
+  defp start_server(script, options) do
+    StreamServer.start(script, Keyword.put_new(options, :stall_timeout, @stall_timeout))
+  end
+
   defp send_heartbeats(connection, duration) do
     for _ <- 1..div(duration, @heartbeat_interval) do
       StreamServer.send_line(connection, @heartbeat)
@@ -324,6 +320,13 @@ defmodule EventSourcingDBTest.HTTP2 do
 
   defp event_line(id) do
     %{"type" => "event", "payload" => event_payload(id)}
+  end
+
+  # The event that the client SDK makes of the payload, which keeps the text of
+  # its data as the line carried it.
+  defp expected_event(id) do
+    payload = event_payload(id)
+    Event.new(payload, Jason.encode!(payload["data"]))
   end
 
   defp event_payload(id) do

@@ -5,7 +5,7 @@ defmodule EventSourcingDBTest.RunEventQLQuery do
 
   import Testcontainers.ExUnit
 
-  container(:esdb, TestContainer.new())
+  container(:esdb, test_container())
 
   test "reads no rows if the query does not return any rows", %{esdb: esdb} do
     client = TestContainer.get_client(esdb)

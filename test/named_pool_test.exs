@@ -4,35 +4,26 @@ defmodule EventSourcingDBTest.NamedPool do
   alias EventSourcingDB.Event
   alias EventSourcingDBTest.StreamServer
 
-  # The heartbeat timeout is shortened through the application environment,
-  # which is global, so these tests must not run concurrently with others.
+  # These tests measure how long a stream takes, so they do not run
+  # concurrently with others.
   use ExUnit.Case, async: false
 
-  @heartbeat_timeout 500
+  @stall_timeout 500
   @heartbeat_interval 100
 
-  # Streams with heartbeats wait twice the heartbeat timeout for the response
-  # headers, which is the receive timeout over HTTP/1.
-  @receive_timeout 2 * @heartbeat_timeout
-
-  # Streams without heartbeats use the receive timeout of the client, which
-  # these tests shorten as well.
+  # A receive timeout that the client passes on to Req bounds streams without
+  # heartbeats as well, so these tests shorten it, too.
   @client_receive_timeout 300
 
   @heartbeat %{"type" => "heartbeat", "payload" => %{}}
 
-  setup do
-    Application.put_env(:eventsourcingdb, :heartbeat_timeout, @heartbeat_timeout)
-    on_exit(fn -> Application.delete_env(:eventsourcingdb, :heartbeat_timeout) end)
-  end
-
   describe "through a named HTTP/2 pool" do
     test "keeps observing events while heartbeats arrive" do
       client =
-        StreamServer.start(
+        start_server(
           fn connection ->
             StreamServer.send_head(connection)
-            send_heartbeats(connection, 2 * @receive_timeout)
+            send_heartbeats(connection, 4 * @stall_timeout)
             StreamServer.send_line(connection, event_line("0"))
           end,
           protocol: :http2,
@@ -44,14 +35,14 @@ defmodule EventSourcingDBTest.NamedPool do
           EventSourcingDB.observe_events!(client, "/test") |> Enum.take(1)
         end)
 
-      assert result == {:ok, [Event.new(event_payload("0"))]}
-      assert elapsed >= 2 * @receive_timeout
+      assert result == {:ok, [expected_event("0")]}
+      assert elapsed >= 4 * @stall_timeout
       assert_receive {:stream_server, :closed}, 1_000
     end
 
     test "keeps reading events while they arrive" do
       client =
-        StreamServer.start(
+        start_server(
           fn connection ->
             StreamServer.send_head(connection)
 
@@ -72,7 +63,7 @@ defmodule EventSourcingDBTest.NamedPool do
           EventSourcingDB.read_events!(client, "/test") |> Enum.take(10)
         end)
 
-      assert result == {:ok, Enum.map(0..9, &Event.new(event_payload(Integer.to_string(&1))))}
+      assert result == {:ok, Enum.map(0..9, &expected_event(Integer.to_string(&1)))}
       assert elapsed >= 3 * @client_receive_timeout
       assert_receive {:stream_server, :closed}, 1_000
     end
@@ -81,10 +72,10 @@ defmodule EventSourcingDBTest.NamedPool do
   describe "through a named HTTP/1 pool" do
     test "keeps observing events while heartbeats arrive" do
       client =
-        StreamServer.start(
+        start_server(
           fn socket ->
             StreamServer.send_head(socket)
-            send_heartbeats(socket, 2 * @receive_timeout)
+            send_heartbeats(socket, 4 * @stall_timeout)
             StreamServer.send_line(socket, event_line("0"))
           end,
           req_options: [finch: [name: start_pool(:http1)]]
@@ -95,14 +86,14 @@ defmodule EventSourcingDBTest.NamedPool do
           EventSourcingDB.observe_events!(client, "/test") |> Enum.take(1)
         end)
 
-      assert result == {:ok, [Event.new(event_payload("0"))]}
-      assert elapsed >= 2 * @receive_timeout
+      assert result == {:ok, [expected_event("0")]}
+      assert elapsed >= 4 * @stall_timeout
       assert_receive {:stream_server, :closed}, 1_000
     end
 
     test "ends observing events with a heartbeat timeout if nothing arrives" do
       client =
-        StreamServer.start(
+        start_server(
           fn socket ->
             StreamServer.send_head(socket)
             StreamServer.send_line(socket, @heartbeat)
@@ -116,14 +107,14 @@ defmodule EventSourcingDBTest.NamedPool do
         end)
 
       assert match?({:raised, %HeartbeatTimeout{}}, result)
-      assert elapsed >= @heartbeat_timeout
-      assert elapsed < 2 * @heartbeat_timeout
+      assert elapsed >= @stall_timeout
+      assert elapsed < 2 * @stall_timeout
       assert_receive {:stream_server, :closed}, 1_000
     end
 
     test "ends reading events with a transmission error if nothing arrives" do
       client =
-        StreamServer.start(
+        start_server(
           fn socket ->
             StreamServer.send_head(socket)
             StreamServer.send_line(socket, event_line("0"))
@@ -147,7 +138,7 @@ defmodule EventSourcingDBTest.NamedPool do
 
     test "fails to observe events if the response does not arrive" do
       client =
-        StreamServer.start(fn _socket -> :ok end,
+        start_server(fn _socket -> :ok end,
           req_options: [finch: [name: start_pool(:http1)]]
         )
 
@@ -157,14 +148,14 @@ defmodule EventSourcingDBTest.NamedPool do
         end)
 
       assert match?({:ok, {:error, %TransmissionError{}}}, result)
-      assert elapsed >= @receive_timeout
-      assert elapsed < 2 * @receive_timeout
+      assert elapsed >= @stall_timeout
+      assert elapsed < 2 * @stall_timeout
       assert_receive {:stream_server, :closed}, 1_000
     end
 
     test "leaves the other messages of the process, and no message of the response, in its mailbox" do
       client =
-        StreamServer.start(
+        start_server(
           fn socket ->
             StreamServer.send_head(socket)
             StreamServer.send_line(socket, @heartbeat)
@@ -201,6 +192,12 @@ defmodule EventSourcingDBTest.NamedPool do
 
   # Starts a Finch instance of its own, whose pools speak the given protocol,
   # and returns its name.
+
+  # Every client of these tests waits for the server for the stall timeout.
+  defp start_server(script, options) do
+    StreamServer.start(script, Keyword.put_new(options, :stall_timeout, @stall_timeout))
+  end
+
   defp start_pool(protocol) do
     name = Module.concat(__MODULE__, "Finch#{System.unique_integer([:positive])}")
     start_supervised!({Finch, name: name, pools: %{default: [protocols: [protocol]]}})
@@ -222,6 +219,13 @@ defmodule EventSourcingDBTest.NamedPool do
 
   defp event_line(id) do
     %{"type" => "event", "payload" => event_payload(id)}
+  end
+
+  # The event that the client SDK makes of the payload, which keeps the text of
+  # its data as the line carried it.
+  defp expected_event(id) do
+    payload = event_payload(id)
+    Event.new(payload, Jason.encode!(payload["data"]))
   end
 
   defp event_payload(id) do

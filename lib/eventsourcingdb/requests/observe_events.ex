@@ -3,6 +3,7 @@ defmodule EventSourcingDB.Requests.ObserveEvents do
   alias EventSourcingDB.Requests.ObserveEvents
   alias EventSourcingDB.ObserveEventsOptions
   alias EventSourcingDB.Event
+  alias EventSourcingDB.RawJSON
   alias EventSourcingDB.{StreamRequest, Endpoint}
 
   use Endpoint
@@ -54,4 +55,9 @@ defmodule EventSourcingDB.Requests.ObserveEvents do
   # validation and parsing
 
   def process(data), do: Event.new(data)
+
+  # The event keeps the text of its data as it arrived, for verifying its hash.
+  def process(data, line) do
+    Event.new(data, line |> RawJSON.member("payload") |> RawJSON.member("data"))
+  end
 end

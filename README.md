@@ -54,6 +54,26 @@ client = EventSourcingDB.Client.new(
 
 Streams work over HTTP/2 as well, and stay open for as long as data arrives.
 
+### Configuring the Stall Timeout
+
+A request fails once it waits for the server for 30 seconds without anything arriving: while connecting, while waiting for the response headers, or while waiting for the rest of the response. Everything that arrives restarts the 30 seconds, so this does not limit how long a request takes: a stream stays open for as long as events, rows, or heartbeats keep arriving. To wait for a different time, pass the `stall_timeout` option to the client, in milliseconds:
+
+```elixir
+client = EventSourcingDB.Client.new(
+  base_url: "http://localhost:3000",
+  api_token: "secret",
+  stall_timeout: 10_000
+)
+```
+
+A request that stalls returns an `EventSourcingDB.Errors.TransmissionError` whose reason, such as a `Req.TransportError`, has the reason `:timeout`, and a stream that stalls while you enumerate it raises that error. The streams of observing events and running EventQL queries, which receive heartbeats, raise an `EventSourcingDB.Errors.HeartbeatTimeout` error instead.
+
+Req retries a request that is safe to repeat after a transient error, such as a timeout over HTTP/1, by default three times, after about one, two, and four seconds. Among the requests of this client SDK, that is only `ping`, since it uses GET, so with the default stall timeout, a `ping` to a server that stalls fails only after about two minutes: four attempts of 30 seconds each, plus the seven seconds in between. To have it fail after the stall timeout, turn off Req's retries via `req_options: [retry: false]`.
+
+If you do not set `stall_timeout`, but pass a `receive_timeout` on to Req via `req_options`, every request other than observing events and running EventQL queries waits for that `receive_timeout` instead, as it always has, and connecting keeps Req's own timeout. A `stall_timeout` that you set takes precedence.
+
+*Note that over HTTP/2, a request with a single answer, such as writing events, must be answered completely within the stall timeout, since there [Finch](https://hexdocs.pm/finch) bounds the request as a whole rather than each wait for data. Streams are not affected.*
+
 ## Writing Events
 
 Call the `write_events` function and hand over a list with one or more events. You do not have to provide all event fields – some are automatically added by the server.
@@ -159,7 +179,7 @@ case EventSourcingDB.read_events(client, "/books/42") do
 end
 ```
 
-If something goes wrong while you enumerate the stream, the stream closes the connection and raises the corresponding error: an `EventSourcingDB.Errors.DBError` if EventSourcingDB reports an error, an `EventSourcingDB.Errors.TransmissionError` if the connection fails, an `EventSourcingDB.Errors.InvalidResponseType` if the response contains an item of an unexpected type, or a `Jason.DecodeError` if the response is not valid JSON.
+If something goes wrong while you enumerate the stream, the stream closes the connection and raises the corresponding error: an `EventSourcingDB.Errors.DBError` if EventSourcingDB reports an error, an `EventSourcingDB.Errors.TransmissionError` if the connection fails or nothing arrives for the [stall timeout](#configuring-the-stall-timeout), an `EventSourcingDB.Errors.InvalidResponseType` if the response contains an item of an unexpected type, or a `Jason.DecodeError` if the response is not valid JSON.
 
 Like all functions that return a stream, `read_events` receives the response as messages sent to the calling process, so enumerate the stream in that process. While you do, the stream leaves the other messages of the process, such as the calls and casts of a GenServer, in its mailbox.
 
@@ -254,7 +274,7 @@ end
 
 *Note that each row returned by the stream matches the projection specified in your query.*
 
-While there are no rows to deliver, EventSourcingDB sends a heartbeat every second. If neither a row nor a heartbeat arrives for 30 seconds, the stream closes the connection and raises an `EventSourcingDB.Errors.HeartbeatTimeout` error.
+While there are no rows to deliver, EventSourcingDB sends a heartbeat every second. If neither a row nor a heartbeat arrives for the [stall timeout](#configuring-the-stall-timeout), 30 seconds by default, the stream closes the connection and raises an `EventSourcingDB.Errors.HeartbeatTimeout` error.
 
 If anything else goes wrong while you enumerate the stream, the stream closes the connection as well and raises the corresponding error: an `EventSourcingDB.Errors.DBError` if EventSourcingDB reports an error, an `EventSourcingDB.Errors.TransmissionError` if the connection fails, an `EventSourcingDB.Errors.InvalidResponseType` if the response contains an item of an unexpected type, or a `Jason.DecodeError` if the response is not valid JSON.
 
@@ -271,7 +291,7 @@ case EventSourcingDB.observe_events(client, "/books/42") do
 end
 ```
 
-While there are no events to deliver, EventSourcingDB sends a heartbeat every second. If neither an event nor a heartbeat arrives for 30 seconds, the stream closes the connection and raises an `EventSourcingDB.Errors.HeartbeatTimeout` error.
+While there are no events to deliver, EventSourcingDB sends a heartbeat every second. If neither an event nor a heartbeat arrives for the [stall timeout](#configuring-the-stall-timeout), 30 seconds by default, the stream closes the connection and raises an `EventSourcingDB.Errors.HeartbeatTimeout` error.
 
 If anything else goes wrong while you enumerate the stream, the stream closes the connection as well and raises the corresponding error: an `EventSourcingDB.Errors.DBError` if EventSourcingDB reports an error, an `EventSourcingDB.Errors.TransmissionError` if the connection fails, an `EventSourcingDB.Errors.InvalidResponseType` if the response contains an item of an unexpected type, or a `Jason.DecodeError` if the response is not valid JSON.
 
@@ -370,7 +390,7 @@ case EventSourcingDB.read_subjects(client, "/") do
 end
 ```
 
-If something goes wrong while you enumerate the stream, the stream closes the connection and raises the corresponding error: an `EventSourcingDB.Errors.DBError` if EventSourcingDB reports an error, an `EventSourcingDB.Errors.TransmissionError` if the connection fails, an `EventSourcingDB.Errors.InvalidResponseType` if the response contains an item of an unexpected type, or a `Jason.DecodeError` if the response is not valid JSON.
+If something goes wrong while you enumerate the stream, the stream closes the connection and raises the corresponding error: an `EventSourcingDB.Errors.DBError` if EventSourcingDB reports an error, an `EventSourcingDB.Errors.TransmissionError` if the connection fails or nothing arrives for the [stall timeout](#configuring-the-stall-timeout), an `EventSourcingDB.Errors.InvalidResponseType` if the response contains an item of an unexpected type, or a `Jason.DecodeError` if the response is not valid JSON.
 
 If you only want to list subjects within a specific branch, provide the desired base subject instead:
 
@@ -389,7 +409,7 @@ case EventSourcingDB.read_event_types(client) do
 end
 ```
 
-If something goes wrong while you enumerate the stream, the stream closes the connection and raises the corresponding error: an `EventSourcingDB.Errors.DBError` if EventSourcingDB reports an error, an `EventSourcingDB.Errors.TransmissionError` if the connection fails, an `EventSourcingDB.Errors.InvalidResponseType` if the response contains an item of an unexpected type, or a `Jason.DecodeError` if the response is not valid JSON.
+If something goes wrong while you enumerate the stream, the stream closes the connection and raises the corresponding error: an `EventSourcingDB.Errors.DBError` if EventSourcingDB reports an error, an `EventSourcingDB.Errors.TransmissionError` if the connection fails or nothing arrives for the [stall timeout](#configuring-the-stall-timeout), an `EventSourcingDB.Errors.InvalidResponseType` if the response contains an item of an unexpected type, or a `Jason.DecodeError` if the response is not valid JSON.
 
 ## Reading a Specific Event Type
 
@@ -404,7 +424,7 @@ end
 
 ## Verifying an Event's Hash
 
-To verify the integrity of an event, call the `Event.verify_hash` function on the event. This recomputes the event's hash locally and compares it to the hash stored in the event. If the hashes differ, the function returns an error:
+To verify the integrity of an event, call the `Event.verify_hash` function on the event. This recomputes the event's hash locally and compares it to the hash stored in the event. If the hashes differ, the function returns an `EventSourcingDB.Errors.HashVerificationFailed` error:
 
 ```elixir
 alias EventSourcingDB.Event
@@ -415,13 +435,19 @@ case Event.verify_hash(event) do
 end
 ```
 
+The hash tells which version of the hash it is, and an event keeps the version it was written with: a hash that starts with `esdb:hash:v2:` is of version 2, which EventSourcingDB writes since version 1.3, and a hash without such a prefix is of version 1. The function verifies both. A hash whose prefix names a version that this client SDK does not know, such as `esdb:hash:v3:`, can not be verified, so the function returns an `EventSourcingDB.Errors.UnsupportedHashVersion` error, which names the version, rather than report the event as tampered with.
+
+Both versions hash the data of the event exactly as EventSourcingDB sent it, byte for byte, which every event that the client SDK returns keeps for this purpose. For an event that you create yourself, for example with `Event.new/1`, only the decoded data is known, so the function encodes it again with Jason, which can differ from what EventSourcingDB sent, for example for `&`, `<`, and `>`, which EventSourcingDB escapes.
+
+Events that the client SDK returns carry this text in the field `__raw_data__`, so comparing such an event with `==` against one built with `Event.new/1` or a struct literal no longer matches, while pattern matching is unaffected.
+
 *Note that this only verifies the hash. If you also want to verify the signature, you can skip this step and call `verify_signature` directly, which performs a hash verification internally.*
 
 ## Verifying an Event's Signature
 
 To verify the authenticity of an event, call the `Event.verify_signature` function on the event. This requires the public key that matches the private key used for signing on the server.
 
-The function first verifies the event's hash, and then checks the signature. If any verification step fails, it returns an error:
+The function first verifies the event's hash, and then checks the signature. If any verification step fails, it returns an error, for example an `EventSourcingDB.Errors.HashVerificationFailed` error if the hash is invalid, an `EventSourcingDB.Errors.UnsupportedHashVersion` error if the hash is of a version that this client SDK does not know, or an `EventSourcingDB.Errors.SignatureVerificationFailed` error if the signature is invalid:
 
 ```elixir
 alias EventSourcingDB.Event

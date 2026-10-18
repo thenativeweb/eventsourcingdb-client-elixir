@@ -11,12 +11,12 @@ defmodule EventSourcingDBTest.VerifyEventsSignature do
 
   container(
     :esdb,
-    TestContainer.new()
+    test_container()
     |> TestContainer.with_signing_key()
   )
 
   test "verify signature with missing signature" do
-    assert {:ok, esdb} = Testcontainers.start_container(TestContainer.new())
+    assert {:ok, esdb} = Testcontainers.start_container(test_container())
     client = TestContainer.get_client(esdb)
 
     {public_key, _private_key} = :crypto.generate_key(:eddsa, :ed25519)
@@ -39,7 +39,7 @@ defmodule EventSourcingDBTest.VerifyEventsSignature do
   end
 
   test "get signing key raises without a signing key" do
-    assert {:ok, esdb} = Testcontainers.start_container(TestContainer.new())
+    assert {:ok, esdb} = Testcontainers.start_container(test_container())
 
     assert_raise ArgumentError, "the container was started without a signing key", fn ->
       TestContainer.get_signing_key(esdb)
@@ -90,5 +90,42 @@ defmodule EventSourcingDBTest.VerifyEventsSignature do
     event = Enum.at(written, 0)
 
     assert :ok == Event.verify_signature(event, verification_key)
+  end
+
+  test "verify event signatures of read events", %{esdb: esdb} do
+    client = TestContainer.get_client(esdb)
+    verification_key = TestContainer.get_verification_key(esdb)
+
+    EventSourcingDB.write_events!(client, [
+      create_test_eventcandidate("/test", %{"value" => 1}),
+      create_test_eventcandidate("/test", %{"value" => 2},
+        traceparent: "00-01234567012345670123456701234567-0123456701234567-00",
+        tracestate: "state=12345"
+      )
+    ])
+
+    events = EventSourcingDB.read_events!(client, "/test") |> Enum.to_list()
+
+    assert length(events) == 2
+
+    for event <- events do
+      assert :ok == Event.verify_signature(event, verification_key)
+    end
+  end
+
+  test "verify event signatures of data that Jason encodes differently", %{esdb: esdb} do
+    client = TestContainer.get_client(esdb)
+    verification_key = TestContainer.get_verification_key(esdb)
+
+    written =
+      EventSourcingDB.write_events!(client, [
+        create_test_eventcandidate("/test", %{"title" => "Tom & Jerry <b>", "pages" => 1.0e21})
+      ])
+
+    read = EventSourcingDB.read_events!(client, "/test") |> Enum.to_list()
+
+    for event <- written ++ read do
+      assert :ok == Event.verify_signature(event, verification_key)
+    end
   end
 end

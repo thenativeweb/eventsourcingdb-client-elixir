@@ -8,7 +8,7 @@ defmodule EventSourcingDBTest.ObserveEvents do
 
   import Testcontainers.ExUnit
 
-  container(:esdb, TestContainer.new())
+  container(:esdb, test_container())
 
   test "observe existing events", %{esdb: esdb} do
     client = TestContainer.get_client(esdb)
