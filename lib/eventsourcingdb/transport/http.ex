@@ -41,15 +41,24 @@ defmodule EventSourcingDB.Transport.HTTP do
   @spec one_shot(Client.t(), atom(), String.t(), term(), keyword()) ::
           {:ok, Req.Response.t()} | {:error, Exception.t()}
   def one_shot(client, method, path, body, options \\ []) do
+    with {:ok, response} <- unchecked_one_shot(client, method, path, body, options),
+         :ok <- validate_server_header(response) do
+      {:ok, response}
+    end
+  end
+
+  # Sends a request with a single answer as one_shot/5 does, but returns the
+  # answer whether it comes from EventSourcingDB or not, for the caller to
+  # check.
+  @spec unchecked_one_shot(Client.t(), atom(), String.t(), term(), keyword()) ::
+          {:ok, Req.Response.t()} | {:error, Exception.t()}
+  def unchecked_one_shot(client, method, path, body, options \\ []) do
     req = build_request(client, method, path, body, options)
     timeout = receive_timeout(client, req)
 
     case Req.request(req, receive_timeout: timeout, decode_body: false) do
-      {:ok, response} ->
-        with :ok <- validate_server_header(response), do: {:ok, response}
-
-      {:error, reason} ->
-        {:error, transport_error(reason, timeout)}
+      {:ok, response} -> {:ok, response}
+      {:error, reason} -> {:error, transport_error(reason, timeout)}
     end
   end
 

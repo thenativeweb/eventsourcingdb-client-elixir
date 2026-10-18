@@ -5,6 +5,7 @@ defmodule EventSourcingDBTest.ApiVersion do
     ConnectionStalled,
     DbApiError,
     InvalidResponseType,
+    InvalidServerHeader,
     TransmissionError
   }
 
@@ -77,6 +78,44 @@ defmodule EventSourcingDBTest.ApiVersion do
                {"GET", "/api/v1/ping"}
              ]
     end
+  end
+
+  for status <- [404, 405] do
+    @status status
+
+    test "the first request uses the v1 API if the v2 ping is answered with #{status} by something else than EventSourcingDB" do
+      url =
+        FakeServer.start(fn
+          %{path: "/api/v2/system/ping"} -> {@status, [{"server", "nginx"}], "not found\n"}
+          request -> v1_server(request, 404)
+        end)
+
+      client = client(url)
+
+      assert EventSourcingDB.ping(client) == :ok
+      assert EventSourcingDB.ping(client) == :ok
+
+      assert received_requests() == [
+               {"GET", "/api/v2/system/ping"},
+               {"GET", "/api/v1/ping"},
+               {"GET", "/api/v1/ping"}
+             ]
+    end
+  end
+
+  test "the first request fails if the v2 ping is answered with an event by something else than EventSourcingDB, and remembers nothing" do
+    url =
+      FakeServer.start(fn
+        %{path: "/api/v2/system/ping"} -> {200, [{"server", "nginx"}], @v2_ping}
+        request -> v2_server(request)
+      end)
+
+    client = client(url)
+
+    assert EventSourcingDB.verify_api_token(client) == {:error, %InvalidServerHeader{}}
+    assert EventSourcingDB.verify_api_token(client) == {:error, %InvalidServerHeader{}}
+
+    assert received_requests() == [{"GET", "/api/v2/system/ping"}, {"GET", "/api/v2/system/ping"}]
   end
 
   test "copies of a client share what it found" do

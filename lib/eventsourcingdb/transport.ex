@@ -32,23 +32,30 @@ defmodule EventSourcingDB.Transport do
   # ping is a GET request among the calls of the client SDK, so the probe is
   # retried only before a ping, as the ping would be, and makes a single
   # attempt before every other call, which Req never retries.
+  #
+  # A 404 or 405 means the v1 API even if it does not come from
+  # EventSourcingDB, such as from a proxy that forwards only the v1 API, since
+  # every request of the v1 API checks that its answer does. Every other answer
+  # must come from EventSourcingDB.
   defp probe(client, call) do
     options = if call == :ping, do: [], else: [retry: false]
 
-    case HTTP.one_shot(client, :get, @probe_path, nil, options) do
-      {:ok, %Req.Response{status: 200, body: body}} ->
-        v2_ping(body)
-
+    case HTTP.unchecked_one_shot(client, :get, @probe_path, nil, options) do
       {:ok, %Req.Response{status: status}} when status in [404, 405] ->
         {:ok, :v1}
 
-      {:ok, %Req.Response{body: text} = response} ->
-        {:error, DbApiError.from_response(response, text)}
+      {:ok, response} ->
+        with :ok <- HTTP.validate_server_header(response), do: probe_answer(response)
 
       {:error, reason} ->
         {:error, reason}
     end
   end
+
+  defp probe_answer(%Req.Response{status: 200, body: body}), do: v2_ping(body)
+
+  defp probe_answer(%Req.Response{body: text} = response),
+    do: {:error, DbApiError.from_response(response, text)}
 
   defp v2_ping(body) do
     case Jason.decode(body) do
