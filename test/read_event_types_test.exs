@@ -7,7 +7,7 @@ defmodule EventSourcingDBTest.ReadEventTypes do
 
   import Testcontainers.ExUnit
 
-  container(:esdb, TestContainer.new())
+  container(:esdb, test_container())
 
   test "reads no event types if the database is empty", %{esdb: esdb} do
     client = TestContainer.get_client(esdb)

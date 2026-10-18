@@ -2,11 +2,12 @@ defmodule EventSourcingDBTest.TestContainer do
   alias EventSourcingDB.TestContainer
   use ExUnit.Case, async: true
 
+  import EventSourcingDBTest.Utils
   import Testcontainers.ExUnit
 
   container(
     :esdb,
-    TestContainer.new()
+    test_container()
     |> TestContainer.with_port(4000)
   )
 

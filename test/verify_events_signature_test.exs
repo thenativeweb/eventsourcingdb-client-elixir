@@ -11,12 +11,12 @@ defmodule EventSourcingDBTest.VerifyEventsSignature do
 
   container(
     :esdb,
-    TestContainer.new()
+    test_container()
     |> TestContainer.with_signing_key()
   )
 
   test "verify signature with missing signature" do
-    assert {:ok, esdb} = Testcontainers.start_container(TestContainer.new())
+    assert {:ok, esdb} = Testcontainers.start_container(test_container())
     client = TestContainer.get_client(esdb)
 
     {public_key, _private_key} = :crypto.generate_key(:eddsa, :ed25519)
@@ -39,7 +39,7 @@ defmodule EventSourcingDBTest.VerifyEventsSignature do
   end
 
   test "get signing key raises without a signing key" do
-    assert {:ok, esdb} = Testcontainers.start_container(TestContainer.new())
+    assert {:ok, esdb} = Testcontainers.start_container(test_container())
 
     assert_raise ArgumentError, "the container was started without a signing key", fn ->
       TestContainer.get_signing_key(esdb)

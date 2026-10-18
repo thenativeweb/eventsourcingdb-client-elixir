@@ -10,7 +10,7 @@ defmodule EventSourcingDBTest.WriteEvents do
 
   import Testcontainers.ExUnit
 
-  container(:esdb, TestContainer.new())
+  container(:esdb, test_container())
 
   test "write single event", %{esdb: esdb} do
     client = TestContainer.get_client(esdb)

@@ -2,7 +2,19 @@ defmodule EventSourcingDBTest.Utils do
   @moduledoc false
   alias EventSourcingDB.Event
   alias EventSourcingDB.EventCandidate
+  alias EventSourcingDB.TestContainer
   import ExUnit.Assertions
+
+  # The tests run against the image tag that EVENTSOURCINGDB_IMAGE_TAG names,
+  # such as latest or preview, and against the default tag of the test
+  # container if it is not set.
+  @spec test_container() :: struct()
+  def test_container() do
+    case System.get_env("EVENTSOURCINGDB_IMAGE_TAG", "") do
+      "" -> TestContainer.new()
+      image_tag -> TestContainer.with_image_tag(TestContainer.new(), image_tag)
+    end
+  end
 
   @spec create_test_eventcandidate(String.t(), map()) :: EventCandidate.t()
   def create_test_eventcandidate(subject, data) do

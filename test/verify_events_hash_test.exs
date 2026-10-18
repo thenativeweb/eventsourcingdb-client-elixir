@@ -7,7 +7,7 @@ defmodule EventSourcingDBTest.VerifyEvents do
 
   import Testcontainers.ExUnit
 
-  container(:esdb, TestContainer.new())
+  container(:esdb, test_container())
 
   test "verify event hash", %{esdb: esdb} do
     client = TestContainer.get_client(esdb)

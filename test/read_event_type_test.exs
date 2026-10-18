@@ -8,7 +8,7 @@ defmodule EventSourcingDBTest.ReadEventType do
 
   import Testcontainers.ExUnit
 
-  container(:esdb, TestContainer.new())
+  container(:esdb, test_container())
 
   test "fails if the event type does not exist", %{esdb: esdb} do
     client = TestContainer.get_client(esdb)

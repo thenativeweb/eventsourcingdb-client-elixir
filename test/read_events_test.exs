@@ -11,7 +11,7 @@ defmodule EventSourcingDBTest.ReadEvents do
 
   import Testcontainers.ExUnit
 
-  container(:esdb, TestContainer.new())
+  container(:esdb, test_container())
 
   test "make read call", %{esdb: esdb} do
     result = TestContainer.get_client(esdb) |> EventSourcingDB.read_events("/")
