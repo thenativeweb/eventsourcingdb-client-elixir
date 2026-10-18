@@ -103,6 +103,31 @@ defmodule EventSourcingDBTest.ApiVersion do
     end
   end
 
+  # A proxy in front of a server without the v2 API answers with a page of
+  # its own, such as the one nginx sends.
+  test "the first request uses the v1 API if a proxy answers the v2 ping with its HTML page for 404" do
+    url =
+      FakeServer.start(fn
+        %{path: "/api/v2/system/ping"} ->
+          {404, [{"server", "nginx"}, {"content-type", "text/html"}],
+           "<html>\r\n<head><title>404 Not Found</title></head>\r\n<body>\r\n<center><h1>404 Not Found</h1></center>\r\n<hr><center>nginx</center>\r\n</body>\r\n</html>\r\n"}
+
+        request ->
+          v1_server(request, 404)
+      end)
+
+    client = client(url)
+
+    assert EventSourcingDB.ping(client) == :ok
+    assert EventSourcingDB.ping(client) == :ok
+
+    assert received_requests() == [
+             {"GET", "/api/v2/system/ping"},
+             {"GET", "/api/v1/ping"},
+             {"GET", "/api/v1/ping"}
+           ]
+  end
+
   test "the first request fails if the v2 ping is answered with an event by something else than EventSourcingDB, and remembers nothing" do
     url =
       FakeServer.start(fn
