@@ -34,13 +34,11 @@ defmodule EventSourcingDBTest.ReadEvents do
   end
 
   test "read with malformed subject", %{esdb: esdb} do
-    client = client_reporting_status(esdb)
+    client = TestContainer.get_client(esdb)
 
     result = EventSourcingDB.read_events(client, "malformed")
-    {:messages, messages} = Process.info(self(), :messages)
 
-    assert_api_error(result, "", ["subject", "malformed"])
-    assert messages == [{:status, 400}]
+    assert_db_api_error(result, 400, nil, "", ["subject", "malformed"])
   end
 
   test "make read call with event", %{esdb: esdb} do

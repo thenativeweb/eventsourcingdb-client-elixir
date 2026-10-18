@@ -8,8 +8,8 @@ defmodule EventSourcingDB.Transport.HTTP do
   alias EventSourcingDB.Client
 
   alias EventSourcingDB.Errors.{
-    ApiError,
-    HeartbeatTimeout,
+    ConnectionStalled,
+    DbApiError,
     InvalidResponseType,
     InvalidServerHeader,
     TransmissionError
@@ -42,13 +42,14 @@ defmodule EventSourcingDB.Transport.HTTP do
           {:ok, Req.Response.t()} | {:error, Exception.t()}
   def one_shot(client, method, path, body, options \\ []) do
     req = build_request(client, method, path, body, options)
+    timeout = receive_timeout(client, req)
 
-    case Req.request(req, receive_timeout: receive_timeout(client, req), decode_body: false) do
+    case Req.request(req, receive_timeout: timeout, decode_body: false) do
       {:ok, response} ->
         with :ok <- validate_server_header(response), do: {:ok, response}
 
       {:error, reason} ->
-        {:error, %TransmissionError{reason: reason}}
+        {:error, transport_error(reason, timeout)}
     end
   end
 
@@ -89,7 +90,6 @@ defmodule EventSourcingDB.Transport.HTTP do
           rest: "",
           wait: wait,
           stall_timeout: stall_timeout,
-          heartbeats?: heartbeats?,
           decode: Keyword.fetch!(options, :decode),
           ends?: Keyword.get(options, :ends?, false),
           status: :open
@@ -121,10 +121,10 @@ defmodule EventSourcingDB.Transport.HTTP do
 
     case response do
       {:ok, response} ->
-        validate_stream_response(response, wait, status_error)
+        validate_stream_response(response, stall_timeout, wait, status_error)
 
       {:error, reason} ->
-        {:error, %TransmissionError{reason: reason}}
+        {:error, transport_error(reason, stall_timeout)}
     end
     |> case do
       {:ok, response} -> {:ok, response, wait}
@@ -134,9 +134,9 @@ defmodule EventSourcingDB.Transport.HTTP do
 
   # A stream that fails to open closes its response right away, so that none
   # of its messages stay behind in the mailbox.
-  defp validate_stream_response(response, wait, status_error) do
+  defp validate_stream_response(response, stall_timeout, wait, status_error) do
     with :ok <- validate_server_header(response),
-         :ok <- validate_stream_status(response, wait, status_error) do
+         :ok <- validate_stream_status(response, stall_timeout, wait, status_error) do
       {:ok, response}
     else
       error ->
@@ -148,16 +148,17 @@ defmodule EventSourcingDB.Transport.HTTP do
   # For a status other than 200, the error carries the text that the server
   # sent, as for the requests with a single answer, so the body is read before
   # the response is closed.
-  defp validate_stream_status(%Req.Response{status: 200}, _wait, _status_error), do: :ok
+  defp validate_stream_status(%Req.Response{status: 200}, _stall_timeout, _wait, _status_error),
+    do: :ok
 
-  defp validate_stream_status(response, wait, status_error) do
+  defp validate_stream_status(response, stall_timeout, wait, status_error) do
     case read_body(response, wait, "") do
       {:ok, text} -> {:error, status_error.(response, text)}
-      {:error, reason} -> {:error, %TransmissionError{reason: reason}}
+      {:error, reason} -> {:error, transport_error(reason, stall_timeout)}
     end
   end
 
-  defp default_status_error(_response, text), do: %ApiError{reason: text}
+  defp default_status_error(response, text), do: DbApiError.from_response(response, text)
 
   # Reads the rest of the body, and waits for each block of it at most for the
   # timeout, unless Finch bounds the wait.
@@ -207,10 +208,10 @@ defmodule EventSourcingDB.Transport.HTTP do
         receive_items(state)
 
       {:error, reason} ->
-        raise(%TransmissionError{reason: reason})
+        raise(transport_error(reason, state.stall_timeout))
 
       :timeout ->
-        raise(timeout_error(state))
+        raise(ConnectionStalled.new(state.stall_timeout))
     end
   end
 
@@ -300,24 +301,15 @@ defmodule EventSourcingDB.Transport.HTTP do
     Req.cancel_async_response(response)
   end
 
-  defp timeout_error(%{heartbeats?: true, stall_timeout: stall_timeout}) do
-    %HeartbeatTimeout{
-      message:
-        "Heartbeat Timeout: No event and no heartbeat arrived for #{duration(stall_timeout)}."
-    }
+  # A transport error that is a timeout is a stall, since every timeout is
+  # the stall timeout of the request.
+  @doc false
+  @spec transport_error(Exception.t(), timeout()) :: Exception.t()
+  def transport_error(%{__exception__: true, reason: :timeout}, timeout) do
+    ConnectionStalled.new(timeout)
   end
 
-  defp timeout_error(_state) do
-    %TransmissionError{reason: %Req.TransportError{reason: :timeout}}
-  end
-
-  defp duration(1_000), do: "1 second"
-
-  defp duration(milliseconds) when rem(milliseconds, 1_000) == 0,
-    do: "#{div(milliseconds, 1_000)} seconds"
-
-  defp duration(1), do: "1 millisecond"
-  defp duration(milliseconds), do: "#{milliseconds} milliseconds"
+  def transport_error(reason, _timeout), do: %TransmissionError{reason: reason}
 
   defp deadline(:infinity), do: :infinity
   defp deadline(timeout), do: System.monotonic_time(:millisecond) + timeout
@@ -528,7 +520,8 @@ defmodule EventSourcingDB.Transport.HTTP do
       base_url: client.base_url,
       auth: {:bearer, client.api_token},
       method: method,
-      url: path
+      url: path,
+      retry: &retry?/2
     ]
     |> Keyword.merge(body_options(body))
     |> Keyword.merge(client.req_options)
@@ -536,6 +529,26 @@ defmodule EventSourcingDB.Transport.HTTP do
     |> put_connect_timeout(client.stall_timeout)
     |> Req.new()
   end
+
+  # Req retries a request that is safe to repeat, which among the requests of
+  # the client SDK only ping is, as it is a GET request, after a transient
+  # error, as it does by default, but never one that the server refused for
+  # its rate limit, since the caller decides whether to wait and try again.
+  @doc false
+  @spec retry?(Req.Request.t(), Req.Response.t() | Exception.t()) :: boolean()
+  def retry?(%Req.Request{method: method}, response_or_exception) do
+    method in [:get, :head] and transient?(response_or_exception)
+  end
+
+  defp transient?(%Req.Response{status: status}), do: status in [408, 500, 502, 503, 504]
+
+  defp transient?(%Req.TransportError{reason: reason}),
+    do: reason in [:timeout, :econnrefused, :closed]
+
+  defp transient?(%Req.HTTPError{protocol: :http2, reason: reason}),
+    do: reason in [:unprocessed, :pool_not_available]
+
+  defp transient?(_exception), do: false
 
   # A request without a body sends none, which a GET request must not carry
   # anyway, since Req would otherwise send it as a POST request.

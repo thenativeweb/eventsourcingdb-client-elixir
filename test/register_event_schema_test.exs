@@ -1,5 +1,6 @@
 defmodule EventSourcingDBTest.RegisterEventSchema do
-  alias EventSourcingDB.Errors.ApiError
+  alias EventSourcingDB.ErrorCode
+  alias EventSourcingDB.Errors.DbApiError
   alias EventSourcingDB.TestContainer
   use ExUnit.Case, async: true
 
@@ -7,6 +8,12 @@ defmodule EventSourcingDBTest.RegisterEventSchema do
   import Testcontainers.ExUnit
 
   container(:esdb, test_container())
+
+  @schema %{
+    "type" => "object",
+    "properties" => %{"id" => %{"type" => "string"}, "name" => %{"type" => "string"}},
+    "required" => ["id", "name"]
+  }
 
   test "register event schema", %{esdb: esdb} do
     client = TestContainer.get_client(esdb)
@@ -40,6 +47,31 @@ defmodule EventSourcingDBTest.RegisterEventSchema do
       client
       |> EventSourcingDB.register_event_schema("io.eventsourcingdb.test", %{"x" => "csie"})
 
-    assert match?({:error, %ApiError{}}, result)
+    assert {:error, %DbApiError{status: 400}} = result
+  end
+
+  test "fails to register a schema for an event type that has one already", %{esdb: esdb} do
+    client = TestContainer.get_client(esdb)
+
+    assert {:ok, _event} =
+             EventSourcingDB.register_event_schema(client, "io.eventsourcingdb.test", @schema)
+
+    result = EventSourcingDB.register_event_schema(client, "io.eventsourcingdb.test", @schema)
+
+    assert_db_api_error(result, 409, ErrorCode.event_schema_already_registered())
+  end
+
+  test "fails to write an event that violates the schema of its type", %{esdb: esdb} do
+    client = TestContainer.get_client(esdb)
+
+    assert {:ok, _event} =
+             EventSourcingDB.register_event_schema(client, "io.eventsourcingdb.test", @schema)
+
+    result =
+      EventSourcingDB.write_events(client, [
+        create_test_eventcandidate("/test", %{"id" => 42, "name" => "Jane Doe"})
+      ])
+
+    assert_db_api_error(result, 409, ErrorCode.event_schema_violated())
   end
 end

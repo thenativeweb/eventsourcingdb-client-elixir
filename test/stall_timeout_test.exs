@@ -9,7 +9,10 @@ end
 
 defmodule EventSourcingDBTest.StallTimeout do
   alias EventSourcingDB.Client
-  alias EventSourcingDB.Errors.ApiError
+  alias EventSourcingDB.ErrorCode
+  alias EventSourcingDB.Errors.ConnectionStalled
+  alias EventSourcingDB.Errors.DbApiError
+  alias EventSourcingDB.Errors.OutcomeUnknown
   alias EventSourcingDB.Errors.TransmissionError
   alias EventSourcingDBTest.StreamServer
   import EventSourcingDBTest.Utils
@@ -36,8 +39,6 @@ defmodule EventSourcingDBTest.StallTimeout do
     "datacontenttype" => "application/json",
     "data" => %{"message" => "My God, it's full of stars."}
   }
-
-  @timeout_error %TransmissionError{reason: %Req.TransportError{reason: :timeout}}
 
   describe "the client" do
     test "sets no stall timeout by default, and does not take one from the req_options" do
@@ -108,7 +109,7 @@ defmodule EventSourcingDBTest.StallTimeout do
         assert result == {:ok, {:ok, []}}
       end
 
-      test "fails to ping with a transmission error if the response does not arrive" do
+      test "fails to ping as a stalled connection if the response does not arrive" do
         client = start_server(fn _connection -> :ok end, protocol: @protocol)
 
         {result, elapsed} =
@@ -116,13 +117,13 @@ defmodule EventSourcingDBTest.StallTimeout do
             {EventSourcingDB.ping(client), mailbox()}
           end)
 
-        assert {:ok, {{:error, %TransmissionError{reason: %{reason: :timeout}}}, []}} = result
+        assert {:ok, {{:error, %ConnectionStalled{}}, []}} = result
         assert elapsed >= @stall_timeout
         assert elapsed < 2 * @stall_timeout
         assert_receive {:stream_server, :closed}, 1_000
       end
 
-      test "fails to write events with a transmission error if the body stops arriving" do
+      test "fails to write events with an unknown outcome if the body stops arriving" do
         client =
           start_server(
             fn connection ->
@@ -137,7 +138,7 @@ defmodule EventSourcingDBTest.StallTimeout do
             {EventSourcingDB.write_events(client, [candidate()]), mailbox()}
           end)
 
-        assert {:ok, {{:error, %TransmissionError{reason: %{reason: :timeout}}}, []}} = result
+        assert {:ok, {{:error, %OutcomeUnknown{cause: %ConnectionStalled{}}}, []}} = result
         assert elapsed >= @stall_timeout
         assert elapsed < 2 * @stall_timeout
         assert_receive {:stream_server, :closed}, 1_000
@@ -163,7 +164,14 @@ defmodule EventSourcingDBTest.StallTimeout do
             {EventSourcingDB.read_event_type(client, "io.eventsourcingdb.test"), mailbox()}
           end)
 
-        assert result == {:ok, {{:error, %ApiError{reason: "event type not found\n"}}, []}}
+        assert result ==
+                 {:ok,
+                  {{:error,
+                    %DbApiError{
+                      status: 404,
+                      code: ErrorCode.event_type_unknown(),
+                      description: "event type not found\n"
+                    }}, []}}
       end
 
       test "fails to ping with a transmission error if the response is not valid JSON" do
@@ -185,7 +193,7 @@ defmodule EventSourcingDBTest.StallTimeout do
         assert {:ok, {:error, %TransmissionError{reason: %Jason.DecodeError{}}}} = result
       end
 
-      test "fails to read events with a transmission error if the response does not arrive" do
+      test "fails to read events as a stalled connection if the response does not arrive" do
         client = start_server(fn _connection -> :ok end, protocol: @protocol)
 
         {result, elapsed} =
@@ -193,7 +201,7 @@ defmodule EventSourcingDBTest.StallTimeout do
             EventSourcingDB.read_events(client, "/test")
           end)
 
-        assert {:ok, {:error, %TransmissionError{reason: %{reason: :timeout}}}} = result
+        assert {:ok, {:error, %ConnectionStalled{}}} = result
         assert elapsed >= @stall_timeout
         assert elapsed < 2 * @stall_timeout
         assert_receive {:stream_server, :closed}, 1_000
@@ -256,7 +264,7 @@ defmodule EventSourcingDBTest.StallTimeout do
         EventSourcingDB.ping(client)
       end)
 
-    assert result == {:ok, {:error, @timeout_error}}
+    assert {:ok, {:error, %ConnectionStalled{}}} = result
     assert elapsed >= receive_timeout
     assert elapsed < @stall_timeout
   end
@@ -315,7 +323,7 @@ defmodule EventSourcingDBTest.StallTimeout do
         EventSourcingDB.ping(client)
       end)
 
-    assert result == {:ok, {:error, @timeout_error}}
+    assert {:ok, {:error, %ConnectionStalled{}}} = result
     assert elapsed >= receive_timeout
     assert elapsed < @stall_timeout
   end
@@ -329,7 +337,7 @@ defmodule EventSourcingDBTest.StallTimeout do
         EventSourcingDB.ping(client)
       end)
 
-    assert result == {:ok, {:error, @timeout_error}}
+    assert {:ok, {:error, %ConnectionStalled{}}} = result
     assert elapsed >= @stall_timeout
     assert elapsed < 2 * @stall_timeout
   end
@@ -343,7 +351,7 @@ defmodule EventSourcingDBTest.StallTimeout do
         EventSourcingDB.ping(client)
       end)
 
-    assert result == {:ok, {:error, @timeout_error}}
+    assert {:ok, {:error, %ConnectionStalled{}}} = result
     assert elapsed >= @stall_timeout
     assert elapsed < 2 * @stall_timeout
   end
@@ -449,7 +457,7 @@ defmodule EventSourcingDBTest.StallTimeout do
     task = Task.async(fn -> measure(fn -> EventSourcingDB.ping(client) end) end)
     {result, elapsed} = Task.await(task, 15_000)
 
-    assert {:error, %TransmissionError{reason: %{reason: :timeout}}} = result
+    assert {:error, %ConnectionStalled{}} = result
     assert accepted_connections() == 4
     assert elapsed >= 4 * @stall_timeout + 6_200
   end
@@ -461,7 +469,7 @@ defmodule EventSourcingDBTest.StallTimeout do
 
     {result, elapsed} = measure(fn -> EventSourcingDB.write_events(client, [candidate()]) end)
 
-    assert {:error, %TransmissionError{reason: %{reason: :timeout}}} = result
+    assert {:error, %OutcomeUnknown{cause: %ConnectionStalled{}}} = result
     assert accepted_connections() == 1
     assert elapsed >= @stall_timeout
     assert elapsed < 2 * @stall_timeout

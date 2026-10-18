@@ -1,5 +1,5 @@
 defmodule EventSourcingDBTest.Essentials do
-  alias EventSourcingDB.Errors.ApiTokenInvalid
+  alias EventSourcingDB.Errors.DbApiError
   alias EventSourcingDB.Errors.TransmissionError
   alias EventSourcingDB.Client
   alias EventSourcingDB.TestContainer
@@ -37,6 +37,6 @@ defmodule EventSourcingDBTest.Essentials do
 
     result = EventSourcingDB.verify_api_token(invalid_client)
 
-    assert match?({:error, %ApiTokenInvalid{}}, result)
+    assert {:error, %DbApiError{status: 401, code: nil}} = result
   end
 end

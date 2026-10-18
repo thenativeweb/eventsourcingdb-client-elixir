@@ -180,6 +180,26 @@ defmodule EventSourcingDB do
 
   *Note that the query must return a single row with a single value, which is interpreted as a boolean.*
 
+  ### Handling Errors
+
+  If EventSourcingDB refuses the write, the function returns an `EventSourcingDB.Errors.DbApiError`, whose `code` tells why, for example that a precondition does not hold. `EventSourcingDB.ErrorCode` holds the codes:
+
+  ```elixir
+  case EventSourcingDB.write_events(client, [event], preconditions) do
+    {:ok, events} ->
+      # ...
+
+    {:error, %EventSourcingDB.Errors.DbApiError{code: code}} ->
+      if code == EventSourcingDB.ErrorCode.precondition_violated() do
+        # ...
+      end
+
+    {:error, %EventSourcingDB.Errors.OutcomeUnknown{cause: cause}} ->
+      # ...
+  end
+  ```
+
+  If the write fails in a way that leaves open whether EventSourcingDB stored it, for example because the connection stalled or broke after the request was sent, the function returns an `EventSourcingDB.Errors.OutcomeUnknown`, which holds the error as its `cause`. EventSourcingDB never stores a write halfway, so before you repeat it, find out whether it was stored, for example by reading the events of the subject. Every other error means that the events were not stored.
   """
   @spec write_events(Client.t(), nonempty_list(EventCandidate.t()), [precondition()]) ::
           response(Event.t())
@@ -207,7 +227,7 @@ defmodule EventSourcingDB do
   end
   ```
 
-  If something goes wrong while you enumerate the stream, the stream closes the connection and raises the corresponding error: an `EventSourcingDB.Errors.DBError` if EventSourcingDB reports an error, an `EventSourcingDB.Errors.TransmissionError` if the connection fails or nothing arrives for the stall timeout of the client (see `EventSourcingDB.Client`), an `EventSourcingDB.Errors.InvalidResponseType` if the response contains an item of an unexpected type, or a `Jason.DecodeError` if the response is not valid JSON.
+  If something goes wrong while you enumerate the stream, the stream closes the connection and raises the corresponding error: an `EventSourcingDB.Errors.DbApiError` if EventSourcingDB reports an error, an `EventSourcingDB.Errors.ConnectionStalled` if nothing arrives for the stall timeout of the client (see `EventSourcingDB.Client`), an `EventSourcingDB.Errors.TransmissionError` if the connection fails, an `EventSourcingDB.Errors.InvalidResponseType` if the response contains an item of an unexpected type, or a `Jason.DecodeError` if the response is not valid JSON.
 
   Like all functions that return a stream, `read_events` receives the response as messages sent to the calling process, so enumerate the stream in that process. While you do, the stream leaves the other messages of the process, such as the calls and casts of a GenServer, in its mailbox.
 
@@ -316,9 +336,9 @@ defmodule EventSourcingDB do
   end
   ```
 
-  While there are no events to deliver, EventSourcingDB sends a heartbeat every second. If neither an event nor a heartbeat arrives for the stall timeout of the client (see `EventSourcingDB.Client`), 30 seconds by default, the stream closes the connection and raises an `EventSourcingDB.Errors.HeartbeatTimeout` error.
+  While there are no events to deliver, EventSourcingDB sends a heartbeat every second. If neither an event nor a heartbeat arrives for the stall timeout of the client (see `EventSourcingDB.Client`), 30 seconds by default, the stream closes the connection and raises an `EventSourcingDB.Errors.ConnectionStalled` error.
 
-  If anything else goes wrong while you enumerate the stream, the stream closes the connection as well and raises the corresponding error: an `EventSourcingDB.Errors.DBError` if EventSourcingDB reports an error, an `EventSourcingDB.Errors.TransmissionError` if the connection fails, an `EventSourcingDB.Errors.InvalidResponseType` if the response contains an item of an unexpected type, or a `Jason.DecodeError` if the response is not valid JSON.
+  If anything else goes wrong while you enumerate the stream, the stream closes the connection as well and raises the corresponding error: an `EventSourcingDB.Errors.DbApiError` if EventSourcingDB reports an error, an `EventSourcingDB.Errors.TransmissionError` if the connection fails, an `EventSourcingDB.Errors.InvalidResponseType` if the response contains an item of an unexpected type, or a `Jason.DecodeError` if the response is not valid JSON.
 
   ### Observing From Subjects Recursively
 
@@ -406,9 +426,9 @@ defmodule EventSourcingDB do
 
   *Note that each row returned by the stream matches the projection specified in your query.*
 
-  While there are no rows to deliver, EventSourcingDB sends a heartbeat every second. If neither a row nor a heartbeat arrives for the stall timeout of the client (see `EventSourcingDB.Client`), 30 seconds by default, the stream closes the connection and raises an `EventSourcingDB.Errors.HeartbeatTimeout` error.
+  While there are no rows to deliver, EventSourcingDB sends a heartbeat every second. If neither a row nor a heartbeat arrives for the stall timeout of the client (see `EventSourcingDB.Client`), 30 seconds by default, the stream closes the connection and raises an `EventSourcingDB.Errors.ConnectionStalled` error.
 
-  If anything else goes wrong while you enumerate the stream, the stream closes the connection as well and raises the corresponding error: an `EventSourcingDB.Errors.DBError` if EventSourcingDB reports an error, an `EventSourcingDB.Errors.TransmissionError` if the connection fails, an `EventSourcingDB.Errors.InvalidResponseType` if the response contains an item of an unexpected type, or a `Jason.DecodeError` if the response is not valid JSON.
+  If anything else goes wrong while you enumerate the stream, the stream closes the connection as well and raises the corresponding error: an `EventSourcingDB.Errors.DbApiError` if EventSourcingDB reports an error, an `EventSourcingDB.Errors.TransmissionError` if the connection fails, an `EventSourcingDB.Errors.InvalidResponseType` if the response contains an item of an unexpected type, or a `Jason.DecodeError` if the response is not valid JSON.
 
   """
   @spec run_eventql_query(Client.t(), String.t()) :: stream_response(any())
@@ -445,6 +465,8 @@ defmodule EventSourcingDB do
     }),
   )
   ```
+
+  As for writing events, the function returns an `EventSourcingDB.Errors.OutcomeUnknown` if it fails in a way that leaves open whether EventSourcingDB registered the schema, and an `EventSourcingDB.Errors.DbApiError` if EventSourcingDB refuses it, for example with the code `EventSourcingDB.ErrorCode.event_schema_already_registered/0`.
   """
   @spec register_event_schema(Client.t(), String.t(), map()) :: response(ManagementEvent.t())
   def register_event_schema(client, event_type, schema) do
@@ -473,7 +495,7 @@ defmodule EventSourcingDB do
   end
   ```
 
-  If something goes wrong while you enumerate the stream, the stream closes the connection and raises the corresponding error: an `EventSourcingDB.Errors.DBError` if EventSourcingDB reports an error, an `EventSourcingDB.Errors.TransmissionError` if the connection fails or nothing arrives for the stall timeout of the client (see `EventSourcingDB.Client`), an `EventSourcingDB.Errors.InvalidResponseType` if the response contains an item of an unexpected type, or a `Jason.DecodeError` if the response is not valid JSON.
+  If something goes wrong while you enumerate the stream, the stream closes the connection and raises the corresponding error: an `EventSourcingDB.Errors.DbApiError` if EventSourcingDB reports an error, an `EventSourcingDB.Errors.ConnectionStalled` if nothing arrives for the stall timeout of the client (see `EventSourcingDB.Client`), an `EventSourcingDB.Errors.TransmissionError` if the connection fails, an `EventSourcingDB.Errors.InvalidResponseType` if the response contains an item of an unexpected type, or a `Jason.DecodeError` if the response is not valid JSON.
 
   If you only want to list subjects within a specific branch, provide the desired subject instead. With `recursive` set to `false`, the stream contains the subject alone, if it exists:
 
@@ -543,7 +565,7 @@ defmodule EventSourcingDB do
   end
   ```
 
-  If something goes wrong while you enumerate the stream, the stream closes the connection and raises the corresponding error: an `EventSourcingDB.Errors.DBError` if EventSourcingDB reports an error, an `EventSourcingDB.Errors.TransmissionError` if the connection fails or nothing arrives for the stall timeout of the client (see `EventSourcingDB.Client`), an `EventSourcingDB.Errors.InvalidResponseType` if the response contains an item of an unexpected type, or a `Jason.DecodeError` if the response is not valid JSON.
+  If something goes wrong while you enumerate the stream, the stream closes the connection and raises the corresponding error: an `EventSourcingDB.Errors.DbApiError` if EventSourcingDB reports an error, an `EventSourcingDB.Errors.ConnectionStalled` if nothing arrives for the stall timeout of the client (see `EventSourcingDB.Client`), an `EventSourcingDB.Errors.TransmissionError` if the connection fails, an `EventSourcingDB.Errors.InvalidResponseType` if the response contains an item of an unexpected type, or a `Jason.DecodeError` if the response is not valid JSON.
   """
   @spec read_event_types(Client.t()) :: stream_response(EventType.t())
   def read_event_types(client) do
