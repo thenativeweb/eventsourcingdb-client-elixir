@@ -68,6 +68,8 @@ client = EventSourcingDB.Client.new(
 
 A request that stalls returns an `EventSourcingDB.Errors.TransmissionError` whose reason, such as a `Req.TransportError`, has the reason `:timeout`, and a stream that stalls while you enumerate it raises that error. The streams of observing events and running EventQL queries, which receive heartbeats, raise an `EventSourcingDB.Errors.HeartbeatTimeout` error instead.
 
+Req retries a request that is safe to repeat after a transient error, such as a timeout over HTTP/1, by default three times, after about one, two, and four seconds. Among the requests of this client SDK, that is only `ping`, since it uses GET, so with the default stall timeout, a `ping` to a server that stalls fails only after about two minutes: four attempts of 30 seconds each, plus the seven seconds in between. To have it fail after the stall timeout, turn off Req's retries via `req_options: [retry: false]`.
+
 If you do not set `stall_timeout`, but pass a `receive_timeout` on to Req via `req_options`, every request other than observing events and running EventQL queries waits for that `receive_timeout` instead, as it always has, and connecting keeps Req's own timeout. A `stall_timeout` that you set takes precedence.
 
 *Note that over HTTP/2, a request with a single answer, such as writing events, must be answered completely within the stall timeout, since there [Finch](https://hexdocs.pm/finch) bounds the request as a whole rather than each wait for data. Streams are not affected.*

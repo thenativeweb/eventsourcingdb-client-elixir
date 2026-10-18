@@ -436,6 +436,70 @@ defmodule EventSourcingDBTest.StallTimeout do
     end
   end
 
+  # Req retries a request that is safe to repeat, which among the requests of
+  # the client SDK only ping is, as it is a GET request, three times after a
+  # transient error such as a timeout, after about one, two, and four seconds,
+  # which Req shortens by a random part of up to a tenth, and logs every
+  # retry.
+  @tag capture_log: true
+  test "fails to ping after the stall timeout of each attempt that Req makes with its default retry" do
+    base_url = start_silent_server()
+    client = Client.new(base_url: base_url, api_token: "secret", stall_timeout: @stall_timeout)
+
+    task = Task.async(fn -> measure(fn -> EventSourcingDB.ping(client) end) end)
+    {result, elapsed} = Task.await(task, 15_000)
+
+    assert {:error, %TransmissionError{reason: %{reason: :timeout}}} = result
+    assert accepted_connections() == 4
+    assert elapsed >= 4 * @stall_timeout + 6_200
+  end
+
+  @tag capture_log: true
+  test "fails to write events after the stall timeout of a single attempt, even with Req's default retry" do
+    base_url = start_silent_server()
+    client = Client.new(base_url: base_url, api_token: "secret", stall_timeout: @stall_timeout)
+
+    {result, elapsed} = measure(fn -> EventSourcingDB.write_events(client, [candidate()]) end)
+
+    assert {:error, %TransmissionError{reason: %{reason: :timeout}}} = result
+    assert accepted_connections() == 1
+    assert elapsed >= @stall_timeout
+    assert elapsed < 2 * @stall_timeout
+  end
+
+  # Starts a server that accepts every connection and never answers, and sends
+  # :accepted to the calling process for each connection.
+  defp start_silent_server() do
+    owner = self()
+    {:ok, listen_socket} = :gen_tcp.listen(0, [:binary, active: false, reuseaddr: true])
+    {:ok, port} = :inet.port(listen_socket)
+
+    start_supervised!({Task, fn -> accept_silently(listen_socket, owner) end})
+
+    "http://127.0.0.1:#{port}"
+  end
+
+  # Keeps every connection open, since the task owns its socket.
+  defp accept_silently(listen_socket, owner) do
+    {:ok, _socket} = :gen_tcp.accept(listen_socket)
+    send(owner, :accepted)
+    accept_silently(listen_socket, owner)
+  end
+
+  defp accepted_connections(count \\ 0) do
+    receive do
+      :accepted -> accepted_connections(count + 1)
+    after
+      0 -> count
+    end
+  end
+
+  defp measure(fun) do
+    started_at = System.monotonic_time(:millisecond)
+    result = fun.()
+    {result, System.monotonic_time(:millisecond) - started_at}
+  end
+
   # Pings a server that answers, and sends the connection options of the
   # request to the calling process.
   defp ping_reporting_connect_options(options) do
