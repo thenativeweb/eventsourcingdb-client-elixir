@@ -437,6 +437,8 @@ The hash tells which version of the hash it is, and an event keeps the version i
 
 Both versions hash the data of the event exactly as EventSourcingDB sent it, byte for byte, which every event that the client SDK returns keeps for this purpose. For an event that you create yourself, for example with `Event.new/1`, only the decoded data is known, so the function encodes it again with Jason, which can differ from what EventSourcingDB sent, for example for `&`, `<`, and `>`, which EventSourcingDB escapes.
 
+Events that the client SDK returns carry this text in the field `__raw_data__`, so comparing such an event with `==` against one built with `Event.new/1` or a struct literal no longer matches, while pattern matching is unaffected.
+
 *Note that this only verifies the hash. If you also want to verify the signature, you can skip this step and call `verify_signature` directly, which performs a hash verification internally.*
 
 ## Verifying an Event's Signature

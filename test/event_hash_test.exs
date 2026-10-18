@@ -68,11 +68,11 @@ defmodule EventSourcingDBTest.EventHash do
     end
   end
 
-  test "leaves the text of the data out of inspect" do
+  test "inspects an event in the default format of a struct, with the text of its data" do
     event = Event.new(Jason.decode!(@tricky_event_v2), raw_data(@tricky_event_v2))
 
-    refute inspect(event) =~ "__raw_data__"
-    assert inspect(event) =~ "Tom & Jerry <b>"
+    assert inspect(event) =~ ~r/^%EventSourcingDB.Event\{/
+    assert inspect(event) =~ "__raw_data__"
   end
 
   describe "a hash of version 1" do
