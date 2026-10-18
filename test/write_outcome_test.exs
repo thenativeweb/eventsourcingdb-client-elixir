@@ -16,6 +16,9 @@ defmodule EventSourcingDBTest.WriteOutcome do
   import EventSourcingDBTest.Utils
   use ExUnit.Case, async: true
 
+  # An HTTP/2 pool logs every failed attempt to connect.
+  @moduletag capture_log: true
+
   # Whether a write was stored depends on when it failed, not on the reason:
   # before it was sent, it was not stored, and after that, it was not stored
   # only if the server refused it.
@@ -60,6 +63,30 @@ defmodule EventSourcingDBTest.WriteOutcome do
     :ok = ApiVersion.remember(client, :v2)
 
     assert {:error, %ConnectionStalled{}} = write(:write_events, client)
+  end
+
+  # An HTTP/2 pool without a connection refuses the request before it sends
+  # it, and over the v2 API, Finch raises that for a stream, rather than
+  # return it.
+  for api <- [:v1, :v2] do
+    @api api
+
+    test "a write over the #{api} API was not stored if the HTTP/2 pool has no connection" do
+      client =
+        Client.new(
+          base_url: closed_url(),
+          api_token: "secret",
+          req_options: [finch: [protocols: [:http2], pool_timeout: 200]]
+        )
+
+      :ok = ApiVersion.remember(client, @api)
+      on_exit(fn -> ApiVersion.forget(client) end)
+
+      assert {:error, %TransmissionError{reason: %Req.HTTPError{protocol: :http2} = reason}} =
+               write(:write_events, client)
+
+      assert reason.reason == :pool_not_available
+    end
   end
 
   # Without Finch, nothing tells when a failure happened, so only the reason

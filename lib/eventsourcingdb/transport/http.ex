@@ -73,7 +73,8 @@ defmodule EventSourcingDB.Transport.HTTP do
   # A failure of the transport, which is a stall if it is a timeout, and,
   # should the caller ask for it, tells whether the request was not sent at
   # all: if Finch saw its connection fail, or the HTTP/2 pool refused it for a
-  # connection it does not have.
+  # connection it does not have, which Finch 0.24 reports as
+  # :pool_not_available.
   defp failure(reason, timeout, phase, track_sending?) do
     error = transport_error(reason, timeout)
 
@@ -83,7 +84,7 @@ defmodule EventSourcingDB.Transport.HTTP do
   end
 
   defp refused_by_http2_pool?(%Req.HTTPError{protocol: :http2, reason: reason}),
-    do: reason in [:disconnected, :connection_not_ready]
+    do: reason in [:disconnected, :connection_not_ready, :pool_not_available]
 
   defp refused_by_http2_pool?(_reason), do: false
 
@@ -493,6 +494,11 @@ defmodule EventSourcingDB.Transport.HTTP do
       RequestPhase.track_child(fn ->
         try do
           Req.request(req, into: :self, receive_timeout: :infinity)
+        rescue
+          # Finch raises rather than returns that an HTTP/2 pool has no
+          # connection for a stream, which Req returns as an error for a
+          # request with a single answer.
+          error in Finch.Error -> {:error, %Req.HTTPError{protocol: :http2, reason: error.reason}}
         catch
           kind, reason -> {:raised, kind, reason, __STACKTRACE__}
         end
