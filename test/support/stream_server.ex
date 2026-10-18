@@ -51,13 +51,17 @@ defmodule EventSourcingDBTest.StreamServer do
       {:stream_server, :listening, port} ->
         base_url = "http://127.0.0.1:#{port}"
 
+        client =
+          Client.new(
+            [base_url: base_url, api_token: "secret", req_options: req_options] ++
+              client_options
+          )
+
         if protocol == :http2 do
-          ExUnit.Callbacks.on_exit(fn -> stop_pool(req_options, base_url) end)
+          ExUnit.Callbacks.on_exit(fn -> stop_pool(client) end)
         end
 
-        Client.new(
-          [base_url: base_url, api_token: "secret", req_options: req_options] ++ client_options
-        )
+        client
     after
       1_000 -> raise "Stream server did not start."
     end
@@ -141,15 +145,17 @@ defmodule EventSourcingDBTest.StreamServer do
   defp req_options(:http1), do: []
   defp req_options(:http2), do: [connect_options: [protocols: [:http2]]]
 
-  # Req starts a Finch pool for connection options of their own. An HTTP/2
+  # Req starts a Finch pool for connection options of their own, which the
+  # client completes with the stall timeout as the connect timeout. An HTTP/2
   # pool reconnects once the server is gone, and logs a warning whenever that
   # fails, so the pool is stopped after the test.
-  defp stop_pool(req_options, base_url) do
-    if Keyword.has_key?(req_options, :connect_options) do
-      req_options
+  defp stop_pool(client) do
+    if Keyword.has_key?(client.req_options, :connect_options) do
+      client.req_options
+      |> Keyword.update!(:connect_options, &Keyword.put_new(&1, :timeout, client.stall_timeout))
       |> Req.Finch.pool_options()
       |> Req.Finch.pool_name()
-      |> Finch.stop_pool(base_url)
+      |> Finch.stop_pool(URI.to_string(client.base_url))
     end
   end
 

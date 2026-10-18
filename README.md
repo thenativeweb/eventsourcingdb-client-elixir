@@ -56,7 +56,7 @@ Streams work over HTTP/2 as well, and stay open for as long as data arrives.
 
 ### Configuring the Stall Timeout
 
-A request fails once nothing at all arrives from the server for 30 seconds, from sending the request, including connecting and waiting for the response headers, until its end. Everything that arrives restarts the 30 seconds, so this does not limit how long a request takes: a stream stays open for as long as events, rows, or heartbeats keep arriving. To wait for a different time, pass the `stall_timeout` option to the client, in milliseconds:
+A request fails once it waits for the server for 30 seconds without anything arriving: while connecting, while waiting for the response headers, or while waiting for the rest of the response. Everything that arrives restarts the 30 seconds, so this does not limit how long a request takes: a stream stays open for as long as events, rows, or heartbeats keep arriving. To wait for a different time, pass the `stall_timeout` option to the client, in milliseconds:
 
 ```elixir
 client = EventSourcingDB.Client.new(
@@ -66,9 +66,11 @@ client = EventSourcingDB.Client.new(
 )
 ```
 
-A request that stalls returns an `EventSourcingDB.Errors.TransmissionError` whose reason is a `Req.TransportError` with the reason `:timeout`, and a stream that stalls while you enumerate it raises that error. The streams of observing events and running EventQL queries, which receive heartbeats, raise an `EventSourcingDB.Errors.HeartbeatTimeout` error instead.
+A request that stalls returns an `EventSourcingDB.Errors.TransmissionError` whose reason, such as a `Req.TransportError`, has the reason `:timeout`, and a stream that stalls while you enumerate it raises that error. The streams of observing events and running EventQL queries, which receive heartbeats, raise an `EventSourcingDB.Errors.HeartbeatTimeout` error instead.
 
-*Note that a `receive_timeout` that you pass on to Req via `req_options` still applies to all requests other than observing events and running EventQL queries, so a request fails after the shorter of the two.*
+If you do not set `stall_timeout`, but pass a `receive_timeout` on to Req via `req_options`, the client waits for that `receive_timeout` instead, for every request. A `stall_timeout` that you set takes precedence.
+
+*Note that over HTTP/2, a request with a single answer, such as writing events, must be answered completely within the stall timeout, since there [Finch](https://hexdocs.pm/finch) bounds the request as a whole rather than each wait for data. Streams are not affected.*
 
 ## Writing Events
 

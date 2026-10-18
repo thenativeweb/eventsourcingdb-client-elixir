@@ -29,6 +29,10 @@ defmodule EventSourcingDB do
     TransmissionError
   }
 
+  # The relay carries the OpenTelemetry context of the caller over if
+  # OpenTelemetry is in use, without depending on it.
+  @compile {:no_warn_undefined, :otel_ctx}
+
   alias EventSourcingDB.Requests.{
     ObserveEvents,
     Ping,
@@ -568,10 +572,10 @@ defmodule EventSourcingDB do
   @spec request_stream(Client.t(), struct()) :: stream_response(any())
   defp request_stream(client, request) do
     req = build_request(client, request)
-    timeout = wait_timeout(client, req, get_request_module(request).heartbeats?())
+    heartbeats? = get_request_module(request).heartbeats?()
 
-    case open_stream(req, timeout) do
-      {:ok, response} ->
+    case open_stream(req, Client.stall_timeout(client), heartbeats?) do
+      {:ok, response, timeout} ->
         # The resource receives the lines of the response, and keeps the start
         # of a line that has not arrived completely yet next to the response.
         # Errors while the stream is read are raised, also while a line is
@@ -592,12 +596,28 @@ defmodule EventSourcingDB do
     end
   end
 
-  @spec open_stream(Req.Request.t(), timeout()) :: response(Req.Response.t())
-  defp open_stream(req, timeout) do
-    response = request_through_relay(req, timeout)
+  # Opens the stream, and returns how long the stream waits for each block of
+  # the response itself. In an HTTP/1 pool, Finch bounds each wait for data
+  # with the receive timeout, including the wait for the response headers, and
+  # connecting with the connect timeout (see build_request/2), so a stream
+  # without heartbeats leaves both to Finch. A stream with heartbeats raises a
+  # HeartbeatTimeout once nothing arrives for the stall timeout, so Finch must
+  # not end it first with an error of its own, and it bounds each wait itself,
+  # in the relay, as does every stream in a pool whose waits Finch does not
+  # bound one by one (see finch_bounds_each_wait?/1).
+  @spec open_stream(Req.Request.t(), timeout(), boolean()) ::
+          {:ok, Req.Response.t(), timeout()} | {:error, Exception.t()}
+  defp open_stream(req, stall_timeout, heartbeats?) do
+    {response, timeout} =
+      if not heartbeats? and finch_bounds_each_wait?(req) do
+        {Req.request(req, into: :self, receive_timeout: stall_timeout), :infinity}
+      else
+        {request_through_relay(req, stall_timeout), stall_timeout}
+      end
 
-    with :ok <- validate_transmission(response) do
-      validate_stream_response(response, timeout)
+    with :ok <- validate_transmission(response),
+         {:ok, response} <- validate_stream_response(response, timeout) do
+      {:ok, response, timeout}
     end
   end
 
@@ -627,7 +647,7 @@ defmodule EventSourcingDB do
   end
 
   # Reads the rest of the body, and waits for each block of it at most for the
-  # timeout.
+  # timeout, unless Finch bounds the wait.
   defp read_body(response, timeout, body) do
     case receive_message(response, deadline(timeout)) do
       {:ok, [data: data]} -> read_body(response, timeout, body <> data)
@@ -741,17 +761,34 @@ defmodule EventSourcingDB do
     Req.cancel_async_response(response)
   end
 
-  # How long a request waits for the server before it fails, if nothing at
-  # all arrives: from sending the request, including connecting, until the
-  # response headers arrive, and then until each block of the body arrives.
-  # It is the stall timeout of the client, which also replaces the timeout of
-  # the heartbeats that observing events and running EventQL queries receive
-  # every second. For other requests, a receive timeout that the client passes
-  # on to Req bounds each wait as well, as it always has.
-  defp wait_timeout(client, _req, true = _heartbeats?), do: client.stall_timeout
+  # Finch bounds each wait for data with the receive timeout only in an HTTP/1
+  # pool, and the whole request in an HTTP/2 pool. Req starts an HTTP/2 pool if
+  # the protocols leave out HTTP/1 (with both, the protocol is negotiated per
+  # connection within an HTTP/1 pool). The protocols of a pool that the client
+  # brings by name are unknown, so the stream bounds each wait itself there,
+  # whether the pool speaks HTTP/1 or HTTP/2.
+  defp finch_bounds_each_wait?(req) do
+    case Req.Request.get_option(req, :finch) do
+      nil ->
+        http1_pool?(req, [])
 
-  defp wait_timeout(client, req, false = _heartbeats?) do
-    min(client.stall_timeout, Req.Request.get_option(req, :receive_timeout, :infinity))
+      options when is_list(options) ->
+        not Keyword.has_key?(options, :name) and http1_pool?(req, options)
+
+      _name ->
+        false
+    end
+  end
+
+  # Req takes the protocols from the Finch options, or else from the connection
+  # options.
+  defp http1_pool?(req, finch_options) do
+    protocols =
+      Keyword.get_lazy(finch_options, :protocols, fn ->
+        Req.Finch.pool_options(req.options)[:protocols]
+      end)
+
+    :http1 in protocols
   end
 
   defp timeout_error(request, timeout) do
@@ -809,8 +846,14 @@ defmodule EventSourcingDB do
   @spec request_one_shot(Client.t(), struct()) :: response(any())
   defp request_one_shot(client, request) do
     request_module = get_request_module(request)
-    req = build_request(client, request)
-    response = receive_response(req, wait_timeout(client, req, false))
+
+    # A request with a single answer runs in the calling process. Finch bounds
+    # each wait for data with the receive timeout there, and connecting with the
+    # connect timeout (see build_request/2), so the stall timeout bounds both.
+    response =
+      client
+      |> build_request(request)
+      |> Req.request(receive_timeout: Client.stall_timeout(client))
 
     # credo warns the last two statements have the same error signature and can
     # therefore be combined. This was a design choice on purpose to have
@@ -841,50 +884,30 @@ defmodule EventSourcingDB do
     end
   end
 
-  # Receives a whole response the way a stream receives its lines, so that the
-  # timeout bounds each wait for it, and then decodes its body as Req does.
-  defp receive_response(req, timeout) do
-    with {:ok, response} <- request_through_relay(req, timeout) do
-      result = read_body(response, timeout, "")
-      close_stream(response)
-
-      with {:ok, body} <- result do
-        decode_body(req, %{response | body: body})
-      end
-    end
-  end
-
-  defp decode_body(req, response) do
-    case Req.Steps.decode_body({req, response}) do
-      {_req, %Req.Response{} = response} -> {:ok, response}
-      {_req, exception} -> {:error, exception}
-    end
-  end
-
   #
   # region Relay
   #
 
-  # Finch bounds the waits for data in its own way: in an HTTP/1 pool each
-  # wait with the receive timeout, but connecting with a timeout of its own,
-  # and in an HTTP/2 pool the whole request, so a stream that runs for longer
-  # would end while data still arrives. So every request asks Finch for no
-  # timeout, and bounds each wait itself: the wait for the response headers
-  # here, from sending the request, and the wait for each block of the body
-  # in read_body/3 and receive_lines/4. Req then waits for the response
+  # Over HTTP/2, Finch bounds a whole request with the receive timeout, rather
+  # than each wait for data, so a stream that runs for longer would end while
+  # data still arrives, and in an HTTP/1 pool, the receive timeout would end a
+  # stream with heartbeats with an error of its own. So such a stream asks
+  # Finch for no timeout, and bounds each wait itself: the wait for the
+  # response headers here, from sending the request, and the wait for each
+  # block of the response in receive_lines/4. Req then waits for the response
   # headers in a receive without any bound, which the caller can not
   # interrupt, so the request runs in a relay process, which forwards the
   # messages of the response to the caller, while the caller bounds the wait.
+  # A pool that the client brings by name takes this path as well, even one
+  # that speaks HTTP/1, where Finch then waits for data without a bound, too.
   #
   # The relay is linked to the caller while it waits for the response headers,
   # and monitors it afterwards, so it does not outlive the caller. Finch in turn
-  # cancels the request once the relay is down. Like a task, the relay names
-  # the caller among its callers, so that what the caller is allowed, such as
-  # the stubs of Req.Test, holds for the relay as well.
+  # cancels the request once the relay is down.
   defp request_through_relay(req, timeout) do
     caller = self()
-    callers = [caller | Process.get(:"$callers", [])]
-    relay = spawn_link(fn -> run_relay(caller, callers, req) end)
+    context = process_context()
+    relay = spawn_link(fn -> run_relay(caller, context, req) end)
     monitor = Process.monitor(relay)
 
     receive do
@@ -932,8 +955,8 @@ defmodule EventSourcingDB do
     end
   end
 
-  defp run_relay(caller, callers, req) do
-    Process.put(:"$callers", callers)
+  defp run_relay(caller, context, req) do
+    take_over_process_context(context)
     monitor = Process.monitor(caller)
 
     result =
@@ -951,6 +974,29 @@ defmodule EventSourcingDB do
     case result do
       {:ok, %Req.Response{body: %Req.Response.Async{ref: ref}}} -> forward(caller, monitor, ref)
       _other -> :ok
+    end
+  end
+
+  # The relay takes over what the steps of a request may take from the
+  # process they run in: the callers, as a task does, so that what the caller
+  # is allowed, such as the stubs of Req.Test, holds for the relay as well, the
+  # Logger metadata, and the OpenTelemetry context, if OpenTelemetry is loaded,
+  # so that the relay logs and traces the request as the caller would have.
+  defp process_context() do
+    %{
+      callers: [self() | Process.get(:"$callers", [])],
+      logger_metadata: Logger.metadata(),
+      otel_context:
+        if(function_exported?(:otel_ctx, :get_current, 0), do: :otel_ctx.get_current())
+    }
+  end
+
+  defp take_over_process_context(context) do
+    Process.put(:"$callers", context.callers)
+    Logger.metadata(context.logger_metadata)
+
+    if context.otel_context != nil do
+      :otel_ctx.attach(context.otel_context)
     end
   end
 
@@ -991,8 +1037,25 @@ defmodule EventSourcingDB do
       ]
       |> Keyword.merge(build_body_opts(request, method))
       |> Keyword.merge(client.req_options)
+      |> put_connect_timeout(Client.stall_timeout(client))
 
     Req.new(opts)
+  end
+
+  # Connecting counts toward the stall timeout, so it bounds connecting as well,
+  # unless the client sets a connect timeout of its own. A pool that the client
+  # brings by name is connected as its options say.
+  defp put_connect_timeout(opts, stall_timeout) do
+    if Keyword.has_key?(opts, :finch) do
+      opts
+    else
+      Keyword.update(
+        opts,
+        :connect_options,
+        [timeout: stall_timeout],
+        &Keyword.put_new(&1, :timeout, stall_timeout)
+      )
+    end
   end
 
   defp implements_protocol?(protocol, mod) when is_atom(protocol) and is_struct(mod) do

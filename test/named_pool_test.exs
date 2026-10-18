@@ -194,7 +194,7 @@ defmodule EventSourcingDBTest.NamedPool do
   # and returns its name.
 
   # Every client of these tests waits for the server for the stall timeout.
-  defp start_server(script, options \\ []) do
+  defp start_server(script, options) do
     StreamServer.start(script, Keyword.put_new(options, :stall_timeout, @stall_timeout))
   end
 

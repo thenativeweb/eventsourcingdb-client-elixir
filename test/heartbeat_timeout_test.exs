@@ -227,9 +227,7 @@ defmodule EventSourcingDBTest.HeartbeatTimeout do
         EventSourcingDB.read_events!(client, "/test") |> Enum.to_list()
       end)
 
-    assert result ==
-             {:raised, %TransmissionError{reason: %Req.TransportError{reason: :timeout}}}
-
+    assert {:raised, %TransmissionError{reason: %{reason: :timeout}}} = result
     assert elapsed >= @stall_timeout
     assert elapsed < 2 * @stall_timeout
     assert_receive {:stream_server, :closed}, 1_000
