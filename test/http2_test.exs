@@ -2,7 +2,6 @@ defmodule EventSourcingDBTest.HTTP2 do
   alias EventSourcingDB.Errors.ConnectionStalled
   alias EventSourcingDB.Errors.DbApiError
   alias EventSourcingDB.Errors.InvalidServerHeader
-  alias EventSourcingDB.Errors.TransmissionError
   alias EventSourcingDB.Event
   alias EventSourcingDBTest.StreamServer
 
