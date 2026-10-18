@@ -570,12 +570,17 @@ defmodule EventSourcingDBTest.ApiV2 do
     Client.new([base_url: url, api_token: "secret"] ++ options)
   end
 
+  # A URL on which nobody accepts a connection. A server may listen on its
+  # port later on, so the API that a test remembers for it is forgotten after
+  # the test.
   defp closed_url() do
     {:ok, socket} = :gen_tcp.listen(0, [:binary])
     {:ok, port} = :inet.port(socket)
     :ok = :gen_tcp.close(socket)
 
-    "http://127.0.0.1:#{port}"
+    url = "http://localhost:#{port}"
+    on_exit(fn -> EventSourcingDB.Transport.ApiVersion.forget(Client.new(url, "secret")) end)
+    url
   end
 
   defp event(type) do

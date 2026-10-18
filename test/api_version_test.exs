@@ -118,32 +118,49 @@ defmodule EventSourcingDBTest.ApiVersion do
     assert received_requests() == [{"GET", "/api/v2/system/ping"}, {"GET", "/api/v2/system/ping"}]
   end
 
-  test "copies of a client share what it found" do
+  test "every client of a server shares what was found, however it was created" do
     url = FakeServer.start(&v1_server(&1, 404))
-    client = client(url)
 
-    assert EventSourcingDB.ping(client) == :ok
-    assert EventSourcingDB.ping(%{client | req_options: [receive_timeout: 5_000]}) == :ok
+    assert EventSourcingDB.ping(client(url)) == :ok
+    assert EventSourcingDB.ping(Client.new(url <> "/", "another token")) == :ok
+    assert EventSourcingDB.ping(%Client{base_url: URI.parse(url), api_token: "secret"}) == :ok
 
     assert received_requests() == [
              {"GET", "/api/v2/system/ping"},
+             {"GET", "/api/v1/ping"},
              {"GET", "/api/v1/ping"},
              {"GET", "/api/v1/ping"}
            ]
   end
 
-  test "a client that was not created with new asks for every request" do
-    url = FakeServer.start(&v1_server(&1, 404))
-    client = %Client{base_url: URI.parse(url), api_token: "secret"}
+  test "a copy of a client with another base URL finds out the API of its own server" do
+    v2_url = FakeServer.start(&v2_server/1)
+    v1_url = FakeServer.start(&v1_server(&1, 404))
+    client = client(v2_url)
 
-    assert EventSourcingDB.ping(client) == :ok
-    assert EventSourcingDB.ping(client) == :ok
+    assert EventSourcingDB.verify_api_token(client) == :ok
+    assert EventSourcingDB.ping(%{client | base_url: URI.parse(v1_url)}) == :ok
 
     assert received_requests() == [
              {"GET", "/api/v2/system/ping"},
-             {"GET", "/api/v1/ping"},
+             {"POST", "/api/v2/system/verify-token"},
              {"GET", "/api/v2/system/ping"},
              {"GET", "/api/v1/ping"}
+           ]
+  end
+
+  # A client is a plain value, which a module attribute can hold, and which
+  # equals another client of the same options.
+  @client Client.new("http://localhost:3000", "secret")
+
+  test "a client is a plain value" do
+    assert @client == Client.new("http://localhost:3000", "secret")
+
+    assert Enum.sort(Map.keys(@client) -- [:__struct__]) == [
+             :api_token,
+             :base_url,
+             :req_options,
+             :stall_timeout
            ]
   end
 
@@ -348,10 +365,12 @@ defmodule EventSourcingDBTest.ApiVersion do
 
   # Waits until the given number of requests waits for the probe that runs,
   # by asking the process that keeps track of the probes, without sleeping.
-  defp await_waiting(%Client{__api_version__: cache} = client, count) do
+  defp await_waiting(%Client{base_url: base_url} = client, count) do
+    server = base_url |> to_string() |> String.trim_trailing("/")
+
     waiting =
       case :sys.get_state(ApiVersion) do
-        %{^cache => probe} -> length(probe.waiting)
+        %{^server => probe} -> length(probe.waiting)
         _none -> 0
       end
 

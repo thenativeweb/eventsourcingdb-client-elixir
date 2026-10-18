@@ -24,15 +24,12 @@ defmodule EventSourcingDB.Client do
 
     - `:stall_timeout` - How many milliseconds a request waits for the server without anything arriving before it fails, while connecting, while waiting for the response headers, or while waiting for the rest of the response, 30 seconds by default. Without it, requests whose answers carry no heartbeats wait for the `receive_timeout` of the `req_options` instead, if there is one
 
-    Creating a client makes no request. On its first request, the client finds out whether the server offers the v2 API, and remembers the answer for as long as the client exists, which copies of the struct share.
-
-    The field `__api_version__` is an implementation detail and not part of the stable API: it holds the API that the client found, so create clients with `new/1` or `new/2` rather than as a struct literal, which finds out anew for every request.
+    Creating a client makes no request. On the first request to a server, the client SDK finds out whether the server offers the v2 API, and remembers the answer for every client of the same `base_url`.
     """
     field :api_token, String.t(), enforce: true
     field :base_url, String.t() | URI.t(), enforce: true
     field :req_options, keyword(), default: []
     field :stall_timeout, pos_integer() | nil
-    field :__api_version__, :atomics.atomics_ref() | nil
   end
 
   def new(base_url, api_token), do: new(base_url: base_url, api_token: api_token)
@@ -48,7 +45,7 @@ defmodule EventSourcingDB.Client do
       validate_stall_timeout!(options[:stall_timeout])
     end
 
-    struct!(__MODULE__, [__api_version__: :atomics.new(1, [])] ++ options)
+    struct!(__MODULE__, options)
   end
 
   defp validate_stall_timeout!(stall_timeout)

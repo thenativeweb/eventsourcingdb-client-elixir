@@ -1,14 +1,13 @@
 defmodule EventSourcingDB.Transport.ApiVersion do
   @moduledoc false
 
-  # Remembers for each client which API its server offers, and lets the
-  # concurrent first requests of a client share a single probe.
+  # Remembers which API a server offers, and lets the concurrent first
+  # requests to a server share a single probe.
   #
-  # A client holds an atomics array of one element, which every copy of the
-  # client shares, and which goes away with the last of them: 0 while the API
-  # is unknown, and 1 or 2 once the probe found the v1 or the v2 API. Only a
-  # definitive answer is remembered, so after a probe that failed, the next
-  # request probes again.
+  # The API is a property of the server, so the answer is remembered by the
+  # base URL of the client, for every client of that server, in a table that
+  # the process of this module owns. Only a definitive answer is remembered,
+  # so after a probe that failed, the next request probes again.
   #
   # The requests that find the API unknown join here. The first of them gets
   # to probe, and the others wait for its result, which they share, whether
@@ -19,8 +18,7 @@ defmodule EventSourcingDB.Transport.ApiVersion do
 
   alias EventSourcingDB.Client
 
-  @versions %{1 => :v1, 2 => :v2}
-  @numbers %{v1: 1, v2: 2}
+  @table __MODULE__
 
   @type version() :: :v1 | :v2
   @type probe() :: (-> {:ok, version()} | {:error, Exception.t()})
@@ -29,34 +27,64 @@ defmodule EventSourcingDB.Transport.ApiVersion do
   def start_link(_options), do: GenServer.start_link(__MODULE__, %{}, name: __MODULE__)
 
   # Returns the API of the server of the client, and probes for it if it is
-  # unknown. A client that was not created with Client.new has nowhere to
-  # remember the API, so it probes for every request.
+  # unknown.
   @spec resolve(Client.t(), probe()) :: {:ok, version()} | {:error, Exception.t()}
-  def resolve(%Client{__api_version__: nil}, probe), do: probe.()
+  def resolve(%Client{} = client, probe) do
+    server = server(client)
 
-  def resolve(%Client{__api_version__: cache}, probe) do
-    case known(cache) do
-      nil -> join(cache, probe)
+    case known(server) do
+      nil -> join(server, probe)
       version -> {:ok, version}
     end
   end
 
   # Remembers the API of the server of the client, as a probe does.
   @spec remember(Client.t(), version()) :: :ok
-  def remember(%Client{__api_version__: cache}, version), do: store(cache, version)
+  def remember(%Client{} = client, version), do: store(server(client), version)
 
-  defp known(cache), do: Map.get(@versions, :atomics.get(cache, 1))
+  # Forgets the API of the server of the client, so that the next request
+  # probes again.
+  @spec forget(Client.t()) :: :ok
+  def forget(%Client{} = client) do
+    if table?(), do: :ets.delete(@table, server(client))
+    :ok
+  end
 
-  defp store(cache, version), do: :atomics.put(cache, 1, Map.fetch!(@numbers, version))
+  # The server is the base URL that the requests of the client go to, which
+  # its Req options may override.
+  defp server(%Client{} = client) do
+    client.req_options
+    |> Keyword.get(:base_url, client.base_url)
+    |> to_string()
+    |> String.trim_trailing("/")
+  end
 
-  defp join(cache, probe) do
+  defp known(server) do
+    with true <- table?(),
+         [{^server, version}] <- :ets.lookup(@table, server) do
+      version
+    else
+      _unknown -> nil
+    end
+  end
+
+  # Without the process of this module, as before the application of the
+  # client SDK started, nothing is remembered.
+  defp store(server, version) do
+    if table?(), do: :ets.insert(@table, {server, version})
+    :ok
+  end
+
+  defp table?(), do: :ets.whereis(@table) != :undefined
+
+  defp join(server, probe) do
     case Process.whereis(__MODULE__) do
       nil ->
-        probe_and_remember(cache, probe)
+        probe_and_remember(server, probe)
 
       coordinator ->
-        case GenServer.call(coordinator, {:join, cache}, :infinity) do
-          :probe -> probe_for_all(coordinator, cache, probe)
+        case GenServer.call(coordinator, {:join, server}, :infinity) do
+          :probe -> probe_for_all(coordinator, server, probe)
           {:shared, result} -> result
         end
     end
@@ -64,26 +92,26 @@ defmodule EventSourcingDB.Transport.ApiVersion do
 
   # The probe that ran just before this one joined may have found the API
   # already.
-  defp probe_for_all(coordinator, cache, probe) do
+  defp probe_for_all(coordinator, server, probe) do
     result =
       try do
-        case known(cache) do
-          nil -> probe_and_remember(cache, probe)
+        case known(server) do
+          nil -> probe_and_remember(server, probe)
           version -> {:ok, version}
         end
       catch
         kind, reason ->
-          GenServer.cast(coordinator, {:abandoned, cache})
+          GenServer.cast(coordinator, {:abandoned, server})
           :erlang.raise(kind, reason, __STACKTRACE__)
       end
 
-    GenServer.cast(coordinator, {:done, cache, result})
+    GenServer.cast(coordinator, {:done, server, result})
     result
   end
 
-  defp probe_and_remember(cache, probe) do
+  defp probe_and_remember(server, probe) do
     with {:ok, version} <- probe.() do
-      store(cache, version)
+      store(server, version)
       {:ok, version}
     end
   end
@@ -93,22 +121,25 @@ defmodule EventSourcingDB.Transport.ApiVersion do
   #
 
   @impl true
-  def init(probes), do: {:ok, probes}
+  def init(probes) do
+    :ets.new(@table, [:set, :public, :named_table, read_concurrency: true])
+    {:ok, probes}
+  end
 
   @impl true
-  def handle_call({:join, cache}, {pid, _tag} = from, probes) do
+  def handle_call({:join, server}, {pid, _tag} = from, probes) do
     case probes do
-      %{^cache => probe} ->
-        {:noreply, Map.put(probes, cache, %{probe | waiting: probe.waiting ++ [from]})}
+      %{^server => probe} ->
+        {:noreply, Map.put(probes, server, %{probe | waiting: probe.waiting ++ [from]})}
 
       _none ->
-        {:reply, :probe, Map.put(probes, cache, %{monitor: Process.monitor(pid), waiting: []})}
+        {:reply, :probe, Map.put(probes, server, %{monitor: Process.monitor(pid), waiting: []})}
     end
   end
 
   @impl true
-  def handle_cast({:done, cache, result}, probes) do
-    case Map.pop(probes, cache) do
+  def handle_cast({:done, server, result}, probes) do
+    case Map.pop(probes, server) do
       {nil, probes} ->
         {:noreply, probes}
 
@@ -119,19 +150,19 @@ defmodule EventSourcingDB.Transport.ApiVersion do
     end
   end
 
-  def handle_cast({:abandoned, cache}, probes), do: {:noreply, hand_over(probes, cache)}
+  def handle_cast({:abandoned, server}, probes), do: {:noreply, hand_over(probes, server)}
 
   @impl true
   def handle_info({:DOWN, monitor, :process, _pid, _reason}, probes) do
-    case Enum.find(probes, fn {_cache, probe} -> probe.monitor == monitor end) do
-      {cache, _probe} -> {:noreply, hand_over(probes, cache)}
+    case Enum.find(probes, fn {_server, probe} -> probe.monitor == monitor end) do
+      {server, _probe} -> {:noreply, hand_over(probes, server)}
       nil -> {:noreply, probes}
     end
   end
 
   # Lets the next waiting process probe, if there is one.
-  defp hand_over(probes, cache) do
-    case Map.pop(probes, cache) do
+  defp hand_over(probes, server) do
+    case Map.pop(probes, server) do
       {nil, probes} ->
         probes
 
@@ -144,7 +175,7 @@ defmodule EventSourcingDB.Transport.ApiVersion do
 
           [{pid, _tag} = next | waiting] ->
             GenServer.reply(next, :probe)
-            Map.put(probes, cache, %{monitor: Process.monitor(pid), waiting: waiting})
+            Map.put(probes, server, %{monitor: Process.monitor(pid), waiting: waiting})
         end
     end
   end

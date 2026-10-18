@@ -16,6 +16,9 @@ defmodule EventSourcingDBTest.FakeServer do
   # Every request is sent to the process that started the server as
   # {:fake_server, :request, request}.
 
+  alias EventSourcingDB.Client
+  alias EventSourcingDB.Transport.ApiVersion
+
   @spec start((map() -> term())) :: String.t()
   def start(handler) do
     owner = self()
@@ -27,7 +30,11 @@ defmodule EventSourcingDBTest.FakeServer do
       id: make_ref()
     )
 
-    "http://127.0.0.1:#{port}"
+    # A server that listened on the same port before may have left the API
+    # that the client SDK found for it behind.
+    url = "http://127.0.0.1:#{port}"
+    :ok = ApiVersion.forget(Client.new(url, "secret"))
+    url
   end
 
   defp accept(listen_socket, owner, handler) do

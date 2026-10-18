@@ -31,6 +31,7 @@ defmodule EventSourcingDBTest.Essentials do
   # still serves, or the other way round.
   test "sends every call through the API that the server offers", %{esdb: esdb} do
     client = client_reporting_requests(esdb)
+    :ok = EventSourcingDB.Transport.ApiVersion.forget(client)
 
     assert EventSourcingDB.ping(client) == :ok
     assert EventSourcingDB.verify_api_token(client) == :ok
