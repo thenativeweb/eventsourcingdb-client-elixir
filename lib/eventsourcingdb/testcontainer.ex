@@ -11,7 +11,9 @@ defmodule EventSourcingDB.TestContainer do
     alias EventSourcingDB.TestContainer
     use ExUnit.Case
 
-    import Testcontainers.ExUnit
+    import EventSourcingDB.TestContainer.ExUnit
+
+    @moduletag timeout: 150_000
 
     container(:esdb, TestContainer.new())
 
@@ -22,6 +24,21 @@ defmodule EventSourcingDB.TestContainer do
     end
   end
   ```
+
+  Starting the container can take up to three times the startup timeout, and that time counts toward the timeout of a test, unless the tests share the container with `shared: true`.
+
+  Alternatively, start and stop the container yourself, with the `start` and the `stop` function:
+
+  ```elixir
+  setup do
+    {:ok, esdb} = TestContainer.start(TestContainer.new())
+    on_exit(fn -> TestContainer.stop(esdb) end)
+
+    %{esdb: esdb}
+  end
+  ```
+
+  The `container` macro of `Testcontainers.ExUnit` still works, but starts the container without the replacement, the cleanup, and the startup timeout of this SDK.
 
   ### Configuring the Container Instance
 
@@ -65,6 +82,18 @@ defmodule EventSourcingDB.TestContainer do
 
   The `signing_key` is the private key EventSourcingDB signs events with. The `verification_key` can be passed to `Event.verify_signature` when verifying events read from the database.
 
+  The `container` macro and the `start` function pull the image if it is missing, and then wait until the database in the container answers a ping, for 30 seconds at most, not counting the pull. To change this time, call the `with_startup_timeout` function with the milliseconds:
+
+  ```elixir
+  container(
+    :esdb,
+    TestContainer.new()
+    |> TestContainer.with_startup_timeout(60_000)
+  )
+  ```
+
+  If a container keeps running, but does not become reachable in time, it is replaced with a new one, up to three containers in total. If Docker fails, or if the container exits, the start fails at once, and if the container exited, the error contains the last 20 lines of its log. The `container` macro raises the error, an `EventSourcingDB.Errors.ContainerStartFailed`, and the `start` function returns it. In any case, every container that failed to start is removed.
+
   ### Configuring the Client Manually
 
   In case you need to set up the client yourself, use the following functions to get details on the container:
@@ -76,17 +105,29 @@ defmodule EventSourcingDB.TestContainer do
   """
 
   alias EventSourcingDB.Client
+  alias EventSourcingDB.Errors.ContainerStartFailed
+  alias EventSourcingDB.TestContainer.Start
   alias Testcontainers.ContainerBuilder
   alias Testcontainers.Container
 
   @default_image_tag "latest"
   @default_port 3000
   @default_api_token "secret"
+  @default_startup_timeout 30_000
 
   defstruct image_tag: @default_image_tag,
             api_token: @default_api_token,
             port: @default_port,
-            signing_key: nil
+            signing_key: nil,
+            startup_timeout: @default_startup_timeout
+
+  @type t() :: %__MODULE__{
+          image_tag: String.t(),
+          api_token: String.t(),
+          port: pos_integer(),
+          signing_key: {binary(), binary()} | nil,
+          startup_timeout: pos_integer()
+        }
 
   @doc """
   Creates a new Testcontainer with default settings - ready for immediate use
@@ -95,7 +136,8 @@ defmodule EventSourcingDB.TestContainer do
     do: %__MODULE__{
       image_tag: @default_image_tag,
       port: @default_port,
-      api_token: @default_api_token
+      api_token: @default_api_token,
+      startup_timeout: @default_startup_timeout
     }
 
   @doc """
@@ -154,6 +196,50 @@ defmodule EventSourcingDB.TestContainer do
     {public_key, private_key} = :crypto.generate_key(:eddsa, :ed25519)
     %{config | signing_key: {public_key, private_key}}
   end
+
+  @doc """
+  Sets how many milliseconds `start/1` waits for the database in a container
+  to become reachable, from when Docker created the container until the
+  database answers a ping. The default is 30 seconds. Pulling the image does
+  not count.
+
+  ```elixir
+  TestContainer.new()
+  |> TestContainer.with_startup_timeout(60_000)
+  ```
+  """
+  def with_startup_timeout(%__MODULE__{} = config, startup_timeout)
+      when is_integer(startup_timeout) and startup_timeout > 0 do
+    %{config | startup_timeout: startup_timeout}
+  end
+
+  @doc """
+  Starts a container with the database, and waits until the database answers
+  a ping with the status `200`, for the startup timeout at most.
+
+  If the container runs, but the database does not become reachable in time,
+  for example because Docker did not publish its port, `start` replaces the
+  container with a new one, up to 3 containers in total. If Docker fails, or
+  if the container exits, `start` returns an error at once, which names the
+  last 20 lines of the log of the container in the latter case. Whenever a
+  container fails to start, `start` removes it.
+
+  Returns `{:ok, container}`, or `{:error, %EventSourcingDB.Errors.ContainerStartFailed{}}`.
+
+  The `container` macro of `EventSourcingDB.TestContainer.ExUnit` starts the
+  container through this function. Starting it with
+  `Testcontainers.start_container/1` instead, as the `container` macro of
+  `Testcontainers.ExUnit` does, waits for the database as before, without the
+  startup timeout, and without replacing the container.
+  """
+  @spec start(t()) :: {:ok, Container.t()} | {:error, ContainerStartFailed.t()}
+  def start(%__MODULE__{} = config), do: Start.run(config)
+
+  @doc """
+  Stops and removes a container that `start/1` started.
+  """
+  @spec stop(Container.t()) :: :ok | {:error, term()}
+  def stop(%Container{} = container), do: Testcontainers.stop_container(container.container_id)
 
   @doc """
   Returns the port on the _host machine_ where the EventSourcingDB container is listening.
@@ -241,8 +327,11 @@ defmodule EventSourcingDB.TestContainer do
 
     @image_name "thenativeweb/eventsourcingdb"
 
-    # The container is ready once EventSourcingDB answers its ping, and a
-    # container that answers within 10 seconds is always found ready.
+    # When Testcontainers starts the container itself, as the container macro
+    # of Testcontainers.ExUnit does, the container is ready once
+    # EventSourcingDB answers its ping, and a container that answers within
+    # 10 seconds is always found ready. TestContainer.start/1 leaves this wait
+    # out, and waits on its own instead.
     #
     # HttpWaitStrategy pauses between its attempts for 0.5 seconds at first,
     # doubling up to 5 seconds, so after the 10 seconds, another attempt

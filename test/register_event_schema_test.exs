@@ -4,9 +4,10 @@ defmodule EventSourcingDBTest.RegisterEventSchema do
   use ExUnit.Case, async: true
 
   import EventSourcingDBTest.Utils
-  import Testcontainers.ExUnit
 
-  container(:esdb, test_container())
+  @moduletag timeout: container_test_timeout()
+
+  setup do: start_container()
 
   @schema %{
     "type" => "object",

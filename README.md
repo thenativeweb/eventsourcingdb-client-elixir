@@ -542,7 +542,9 @@ defmodule YourTest do
   alias EventSourcingDB.TestContainer
   use ExUnit.Case
 
-  import Testcontainers.ExUnit
+  import EventSourcingDB.TestContainer.ExUnit
+
+  @moduletag timeout: 150_000
 
   container(:esdb, TestContainer.new())
 
@@ -553,6 +555,21 @@ defmodule YourTest do
   end
 end
 ```
+
+Starting the container can take up to three times the startup timeout, and that time counts toward the timeout of a test, unless the tests share the container with `shared: true`.
+
+Alternatively, start and stop the container yourself, with the `start` and the `stop` function:
+
+```elixir
+setup do
+  {:ok, esdb} = TestContainer.start(TestContainer.new())
+  on_exit(fn -> TestContainer.stop(esdb) end)
+
+  %{esdb: esdb}
+end
+```
+
+The `container` macro of `Testcontainers.ExUnit` still works, but starts the container without the replacement, the cleanup, and the startup timeout of this SDK.
 
 ### Configuring the Container Instance
 
@@ -595,6 +612,18 @@ verification_key = TestContainer.get_verification_key(esdb)
 ```
 
 The `signing_key` is the private key EventSourcingDB signs events with. The `verification_key` can be passed to `Event.verify_signature` when verifying events read from the database.
+
+The `container` macro and the `start` function pull the image if it is missing, and then wait until the database in the container answers a ping, for 30 seconds at most, not counting the pull. To change this time, call the `with_startup_timeout` function with the milliseconds:
+
+```elixir
+container(
+  :esdb,
+  TestContainer.new()
+  |> TestContainer.with_startup_timeout(60_000)
+)
+```
+
+If a container keeps running, but does not become reachable in time, it is replaced with a new one, up to three containers in total. If Docker fails, or if the container exits, the start fails at once, and if the container exited, the error contains the last 20 lines of its log. The `container` macro raises the error, an `EventSourcingDB.Errors.ContainerStartFailed`, and the `start` function returns it. In any case, every container that failed to start is removed.
 
 ### Configuring the Client Manually
 
@@ -645,3 +674,5 @@ Version 2 of the client SDK talks to servers with the v2 API through it (see [Ta
 - **The client SDK asks a server for its API on the first request to it.** The first request to a server is preceded by `GET /api/v2/system/ping`, and reads over the v2 API use the method `QUERY`, which a proxy in front of EventSourcingDB has to let through. Over the v2 API, an error about a read itself, such as a malformed subject, arrives within the stream, so it is raised once you enumerate the stream.
   - Before: `EventSourcingDB.read_events(client, "malformed")` returned `{:error, %EventSourcingDB.Errors.ApiError{}}`
   - After: over the v2 API, `{:ok, events}`, and `Enum.to_list(events)` raises an `EventSourcingDB.Errors.DbApiError` with the code `EventSourcingDB.ErrorCode.subject_malformed()`
+
+To start the test container with the replacement, the cleanup, and the startup timeout of this SDK, switch the import of `Testcontainers.ExUnit` to `EventSourcingDB.TestContainer.ExUnit`.

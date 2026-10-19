@@ -5,6 +5,7 @@ defmodule EventSourcingDBTest.Utils do
   alias EventSourcingDB.EventCandidate
   alias EventSourcingDB.TestContainer
   import ExUnit.Assertions
+  import ExUnit.Callbacks
 
   # The tests run against the image tag that EVENTSOURCINGDB_IMAGE_TAG names,
   # such as latest or preview, and against the default tag of the test
@@ -15,6 +16,36 @@ defmodule EventSourcingDBTest.Utils do
       "" -> TestContainer.new()
       image_tag -> TestContainer.with_image_tag(TestContainer.new(), image_tag)
     end
+  end
+
+  # The timeout of a test module whose tests start a container, as starting
+  # it counts towards the timeout of a test, even in its setup. A start that
+  # replaces two containers in which the database does not become reachable
+  # takes three times the startup timeout of 30 seconds.
+  @spec container_test_timeout() :: pos_integer()
+  def container_test_timeout, do: 3 * 30_000 + 60_000
+
+  # Starts a test container, and stops it once the tests are done, for setup
+  # and setup_all to hand it to the tests as esdb.
+  @spec start_container(TestContainer.t()) :: %{esdb: Testcontainers.Container.t()}
+  def start_container(config \\ test_container()) do
+    {:ok, esdb} = TestContainer.start(config)
+    on_exit(fn -> TestContainer.stop(esdb) end)
+
+    %{esdb: esdb}
+  end
+
+  # The ids of the containers that carry the label of the given attempt to
+  # start a test container, whether they run or not.
+  @spec containers_of_attempt(String.t()) :: [String.t()]
+  def containers_of_attempt(attempt_id) do
+    {conn, _docker_host_url, _docker_host} = Testcontainers.Connection.get_connection()
+    filters = Jason.encode!(%{"label" => ["io.eventsourcingdb.container-start=#{attempt_id}"]})
+
+    {:ok, containers} =
+      DockerEngineAPI.Api.Container.container_list(conn, all: true, filters: filters)
+
+    Enum.map(containers, & &1."Id")
   end
 
   # The API that the server in the container offers, which the test finds out
