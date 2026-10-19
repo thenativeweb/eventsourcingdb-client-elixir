@@ -224,7 +224,7 @@ case EventSourcingDB.read_events(client, "/books/42") do
 end
 ```
 
-If something goes wrong while you enumerate the stream, the stream closes the connection and raises the corresponding error: an `EventSourcingDB.Errors.DbApiError` if EventSourcingDB reports an error, an `EventSourcingDB.Errors.ConnectionStalled` if nothing arrives for the [stall timeout](#configuring-the-stall-timeout), an `EventSourcingDB.Errors.TransmissionError` if the connection fails or the stream ends before EventSourcingDB finished it, an `EventSourcingDB.Errors.InvalidResponseType` if the response contains an item of an unexpected type, or a `Jason.DecodeError` if the response is not valid JSON.
+If something goes wrong while you enumerate the stream, the stream closes the connection and raises the corresponding error: an `EventSourcingDB.Errors.DbApiError` if EventSourcingDB reports an error, an `EventSourcingDB.Errors.CallTimedOut` if the `timeout` of the call ran out, an `EventSourcingDB.Errors.ConnectionStalled` if nothing arrives for the [stall timeout](#configuring-the-stall-timeout), an `EventSourcingDB.Errors.TransmissionError` if the connection fails or the stream ends before EventSourcingDB finished it, an `EventSourcingDB.Errors.InvalidResponseType` if the response contains an item of an unexpected type, or a `Jason.DecodeError` if the response is not valid JSON.
 
 Servers with the v2 API report an error about the request itself, such as a malformed subject, within the stream as well, so the stream raises it once you enumerate it, while servers without the v2 API answer with the error right away.
 
@@ -445,7 +445,7 @@ case EventSourcingDB.read_subjects(
 end
 ```
 
-If something goes wrong while you enumerate the stream, the stream closes the connection and raises the corresponding error: an `EventSourcingDB.Errors.DbApiError` if EventSourcingDB reports an error, an `EventSourcingDB.Errors.ConnectionStalled` if nothing arrives for the [stall timeout](#configuring-the-stall-timeout), an `EventSourcingDB.Errors.TransmissionError` if the connection fails or the stream ends before EventSourcingDB finished it, an `EventSourcingDB.Errors.InvalidResponseType` if the response contains an item of an unexpected type, or a `Jason.DecodeError` if the response is not valid JSON.
+If something goes wrong while you enumerate the stream, the stream closes the connection and raises the corresponding error: an `EventSourcingDB.Errors.DbApiError` if EventSourcingDB reports an error, an `EventSourcingDB.Errors.CallTimedOut` if the `timeout` of the call ran out, an `EventSourcingDB.Errors.ConnectionStalled` if nothing arrives for the [stall timeout](#configuring-the-stall-timeout), an `EventSourcingDB.Errors.TransmissionError` if the connection fails or the stream ends before EventSourcingDB finished it, an `EventSourcingDB.Errors.InvalidResponseType` if the response contains an item of an unexpected type, or a `Jason.DecodeError` if the response is not valid JSON.
 
 If you only want to list subjects within a specific branch, provide the desired subject instead. With `recursive` set to `false`, the stream contains the subject alone, if it exists:
 
@@ -470,7 +470,7 @@ case EventSourcingDB.read_event_types(client) do
 end
 ```
 
-If something goes wrong while you enumerate the stream, the stream closes the connection and raises the corresponding error: an `EventSourcingDB.Errors.DbApiError` if EventSourcingDB reports an error, an `EventSourcingDB.Errors.ConnectionStalled` if nothing arrives for the [stall timeout](#configuring-the-stall-timeout), an `EventSourcingDB.Errors.TransmissionError` if the connection fails or the stream ends before EventSourcingDB finished it, an `EventSourcingDB.Errors.InvalidResponseType` if the response contains an item of an unexpected type, or a `Jason.DecodeError` if the response is not valid JSON.
+If something goes wrong while you enumerate the stream, the stream closes the connection and raises the corresponding error: an `EventSourcingDB.Errors.DbApiError` if EventSourcingDB reports an error, an `EventSourcingDB.Errors.CallTimedOut` if the `timeout` of the call ran out, an `EventSourcingDB.Errors.ConnectionStalled` if nothing arrives for the [stall timeout](#configuring-the-stall-timeout), an `EventSourcingDB.Errors.TransmissionError` if the connection fails or the stream ends before EventSourcingDB finished it, an `EventSourcingDB.Errors.InvalidResponseType` if the response contains an item of an unexpected type, or a `Jason.DecodeError` if the response is not valid JSON.
 
 ## Reading a Specific Event Type
 
