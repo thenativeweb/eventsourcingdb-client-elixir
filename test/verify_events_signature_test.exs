@@ -7,6 +7,8 @@ defmodule EventSourcingDBTest.VerifyEventsSignature do
   import EventSourcingDBTest.Utils
   use ExUnit.Case
 
+  @moduletag timeout: container_test_timeout()
+
   setup do: start_container(TestContainer.with_signing_key(test_container()))
 
   test "verify signature with missing signature" do

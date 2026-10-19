@@ -4,6 +4,8 @@ defmodule EventSourcingDBTest.ReadSubjects do
   import EventSourcingDBTest.Utils
   use ExUnit.Case, async: true
 
+  @moduletag timeout: container_test_timeout()
+
   setup do: start_container()
 
   @recursive %ReadSubjectsOptions{recursive: true}

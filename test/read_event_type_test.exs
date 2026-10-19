@@ -6,6 +6,8 @@ defmodule EventSourcingDBTest.ReadEventType do
   import EventSourcingDBTest.Utils
   use ExUnit.Case, async: true
 
+  @moduletag timeout: container_test_timeout()
+
   setup do: start_container()
 
   test "fails if the event type does not exist", %{esdb: esdb} do

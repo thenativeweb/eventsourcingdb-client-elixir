@@ -3,6 +3,8 @@ defmodule EventSourcingDBTest.RunEventQLQuery do
   import EventSourcingDBTest.Utils
   use ExUnit.Case, async: true
 
+  @moduletag timeout: container_test_timeout()
+
   setup do: start_container()
 
   test "reads no rows if the query does not return any rows", %{esdb: esdb} do

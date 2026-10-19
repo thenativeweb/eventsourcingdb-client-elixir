@@ -18,6 +18,13 @@ defmodule EventSourcingDBTest.Utils do
     end
   end
 
+  # The timeout of a test module whose tests start a container, as starting
+  # it counts towards the timeout of a test, even in its setup. A start that
+  # replaces two containers in which the database does not become reachable
+  # takes three times the startup timeout of 30 seconds.
+  @spec container_test_timeout() :: pos_integer()
+  def container_test_timeout, do: 3 * 30_000 + 60_000
+
   # Starts a test container, and stops it once the tests are done, for setup
   # and setup_all to hand it to the tests as esdb.
   @spec start_container(TestContainer.t()) :: %{esdb: Testcontainers.Container.t()}

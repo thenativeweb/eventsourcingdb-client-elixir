@@ -6,6 +6,8 @@ defmodule EventSourcingDBTest.ObserveEvents do
   import EventSourcingDBTest.Utils
   use ExUnit.Case, async: true
 
+  @moduletag timeout: container_test_timeout()
+
   setup do: start_container()
 
   test "observe existing events", %{esdb: esdb} do
