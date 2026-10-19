@@ -193,6 +193,8 @@ case EventSourcingDB.write_events(client, [event], preconditions) do
 end
 ```
 
+#### Knowing Whether a Write Was Stored
+
 If the write fails in a way that leaves open whether EventSourcingDB stored it, for example because the connection stalled or broke after the request was sent, or because the answer did not come from EventSourcingDB, the function returns an `EventSourcingDB.Errors.OutcomeUnknown`, which holds the error as its `cause`. EventSourcingDB never stores a write halfway, so before you repeat it, find out whether it was stored, for example by reading the events of the subject. Every other error means that the events were not stored: the connection could not be established at all, or EventSourcingDB refused the write.
 
 ## Reading Events
