@@ -11,12 +11,9 @@ defmodule EventSourcingDB.TestContainer do
     alias EventSourcingDB.TestContainer
     use ExUnit.Case
 
-    setup do
-      {:ok, esdb} = TestContainer.start(TestContainer.new())
-      on_exit(fn -> TestContainer.stop(esdb) end)
+    import EventSourcingDB.TestContainer.ExUnit
 
-      %{esdb: esdb}
-    end
+    container(:esdb, TestContainer.new())
 
     test "ping", %{esdb: esdb} do
       client = TestContainer.get_client(esdb)
@@ -26,28 +23,50 @@ defmodule EventSourcingDB.TestContainer do
   end
   ```
 
+  Alternatively, start and stop the container yourself, with the `start` and the `stop` function:
+
+  ```elixir
+  setup do
+    {:ok, esdb} = TestContainer.start(TestContainer.new())
+    on_exit(fn -> TestContainer.stop(esdb) end)
+
+    %{esdb: esdb}
+  end
+  ```
+
+  The `container` macro of `Testcontainers.ExUnit` still works, but starts the container without the replacement, the cleanup, and the startup timeout of this SDK.
+
   ### Configuring the Container Instance
 
   By default, `TestContainer` uses the `latest` tag of the official EventSourcingDB Docker image. To change that, call the `with_image_tag` function:
 
   ```elixir
-  TestContainer.new()
-  |> TestContainer.with_image_tag("1.0.0")
+  container(
+    :esdb,
+    TestContainer.new()
+    |> TestContainer.with_image_tag("1.0.0")
+  )
   ```
 
   Similarly, you can configure the port to use and the API token. Call the `with_port` or the `with_api_token` function respectively:
 
   ```elixir
-  TestContainer.new()
-  |> TestContainer.with_port(4000)
-  |> TestContainer.with_api_token("secret")
+  container(
+    :esdb,
+    TestContainer.new()
+    |> TestContainer.with_port(4000)
+    |> TestContainer.with_api_token("secret")
+  )
   ```
 
   If you want to sign events, call the `with_signing_key` function. This generates a new signing and verification key pair inside the container:
 
   ```elixir
-  TestContainer.new()
-  |> TestContainer.with_signing_key()
+  container(
+    :esdb,
+    TestContainer.new()
+    |> TestContainer.with_signing_key()
+  )
   ```
 
   You can retrieve the private key (for signing) and the public key (for verifying signatures) once the container has been started:
@@ -59,14 +78,17 @@ defmodule EventSourcingDB.TestContainer do
 
   The `signing_key` is the private key EventSourcingDB signs events with. The `verification_key` can be passed to `Event.verify_signature` when verifying events read from the database.
 
-  The `start` function pulls the image if it is missing, and then waits until the database in the container answers a ping, for 30 seconds at most, not counting the pull. To change this time, call the `with_startup_timeout` function with the milliseconds:
+  The `container` macro and the `start` function pull the image if it is missing, and then wait until the database in the container answers a ping, for 30 seconds at most, not counting the pull. To change this time, call the `with_startup_timeout` function with the milliseconds:
 
   ```elixir
-  TestContainer.new()
-  |> TestContainer.with_startup_timeout(60_000)
+  container(
+    :esdb,
+    TestContainer.new()
+    |> TestContainer.with_startup_timeout(60_000)
+  )
   ```
 
-  If a container keeps running, but does not become reachable in time, `start` replaces it with a new one, up to three containers in total, and then returns an `EventSourcingDB.Errors.ContainerStartFailed`. If Docker fails, or if the container exits, `start` returns that error at once, which, if the container exited, contains the last 20 lines of its log. In any case, `start` removes every container that it failed to start.
+  If a container keeps running, but does not become reachable in time, it is replaced with a new one, up to three containers in total. If Docker fails, or if the container exits, the start fails at once, and if the container exited, the error contains the last 20 lines of its log. The `container` macro raises the error, an `EventSourcingDB.Errors.ContainerStartFailed`, and the `start` function returns it. In any case, every container that failed to start is removed.
 
   ### Configuring the Client Manually
 
@@ -200,10 +222,11 @@ defmodule EventSourcingDB.TestContainer do
 
   Returns `{:ok, container}`, or `{:error, %EventSourcingDB.Errors.ContainerStartFailed{}}`.
 
-  Starting the container with `Testcontainers.start_container/1` instead, as
-  the `container` macro of `Testcontainers.ExUnit` does, waits for the
-  database as before, without the startup timeout, and without replacing the
-  container.
+  The `container` macro of `EventSourcingDB.TestContainer.ExUnit` starts the
+  container through this function. Starting it with
+  `Testcontainers.start_container/1` instead, as the `container` macro of
+  `Testcontainers.ExUnit` does, waits for the database as before, without the
+  startup timeout, and without replacing the container.
   """
   @spec start(t()) :: {:ok, Container.t()} | {:error, ContainerStartFailed.t()}
   def start(%__MODULE__{} = config), do: Start.run(config)

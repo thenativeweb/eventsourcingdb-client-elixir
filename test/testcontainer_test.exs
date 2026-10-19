@@ -400,7 +400,8 @@ defmodule EventSourcingDBTest.TestContainer do
     {:ok, attempts} = Agent.start(fn -> [] end)
 
     on_exit(fn ->
-      for attempt_id <- Agent.get(attempts, & &1), container_id <- containers(attempt_id) do
+      for attempt_id <- Agent.get(attempts, & &1),
+          container_id <- containers_of_attempt(attempt_id) do
         DockerContainer.container_delete(docker(), container_id, force: true)
       end
 
@@ -422,7 +423,8 @@ defmodule EventSourcingDBTest.TestContainer do
 
   defp assert_removed(attempt_ids) do
     for attempt_id <- attempt_ids do
-      assert containers(attempt_id) == [], "a container of the attempt #{attempt_id} is left"
+      assert containers_of_attempt(attempt_id) == [],
+             "a container of the attempt #{attempt_id} is left"
     end
   end
 
@@ -430,7 +432,7 @@ defmodule EventSourcingDBTest.TestContainer do
   # Testcontainers is done with it, which takes a moment.
   defp assert_removed_soon(attempt_id, checks \\ 50) do
     cond do
-      containers(attempt_id) == [] ->
+      containers_of_attempt(attempt_id) == [] ->
         :ok
 
       checks > 0 ->
@@ -440,13 +442,6 @@ defmodule EventSourcingDBTest.TestContainer do
       true ->
         flunk("a container of the attempt #{attempt_id} is left")
     end
-  end
-
-  defp containers(attempt_id) do
-    filters = Jason.encode!(%{"label" => ["#{@start_label}=#{attempt_id}"]})
-    {:ok, containers} = DockerContainer.container_list(docker(), all: true, filters: filters)
-
-    Enum.map(containers, & &1."Id")
   end
 
   defp docker do

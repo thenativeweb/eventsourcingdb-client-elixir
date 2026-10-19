@@ -542,12 +542,9 @@ defmodule YourTest do
   alias EventSourcingDB.TestContainer
   use ExUnit.Case
 
-  setup do
-    {:ok, esdb} = TestContainer.start(TestContainer.new())
-    on_exit(fn -> TestContainer.stop(esdb) end)
+  import EventSourcingDB.TestContainer.ExUnit
 
-    %{esdb: esdb}
-  end
+  container(:esdb, TestContainer.new())
 
   test "ping", %{esdb: esdb} do
     client = TestContainer.get_client(esdb)
@@ -557,28 +554,50 @@ defmodule YourTest do
 end
 ```
 
+Alternatively, start and stop the container yourself, with the `start` and the `stop` function:
+
+```elixir
+setup do
+  {:ok, esdb} = TestContainer.start(TestContainer.new())
+  on_exit(fn -> TestContainer.stop(esdb) end)
+
+  %{esdb: esdb}
+end
+```
+
+The `container` macro of `Testcontainers.ExUnit` still works, but starts the container without the replacement, the cleanup, and the startup timeout of this SDK.
+
 ### Configuring the Container Instance
 
 By default, `TestContainer` uses the `latest` tag of the official EventSourcingDB Docker image. To change that, call the `with_image_tag` function:
 
 ```elixir
-TestContainer.new()
-|> TestContainer.with_image_tag("1.0.0")
+container(
+  :esdb,
+  TestContainer.new()
+  |> TestContainer.with_image_tag("1.0.0")
+)
 ```
 
 Similarly, you can configure the port to use and the API token. Call the `with_port` or the `with_api_token` function respectively:
 
 ```elixir
-TestContainer.new()
-|> TestContainer.with_port(4000)
-|> TestContainer.with_api_token("secret")
+container(
+  :esdb,
+  TestContainer.new()
+  |> TestContainer.with_port(4000)
+  |> TestContainer.with_api_token("secret")
+)
 ```
 
 If you want to sign events, call the `with_signing_key` function. This generates a new signing and verification key pair inside the container:
 
 ```elixir
-TestContainer.new()
-|> TestContainer.with_signing_key()
+container(
+  :esdb,
+  TestContainer.new()
+  |> TestContainer.with_signing_key()
+)
 ```
 
 You can retrieve the private key (for signing) and the public key (for verifying signatures) once the container has been started:
@@ -590,14 +609,17 @@ verification_key = TestContainer.get_verification_key(esdb)
 
 The `signing_key` is the private key EventSourcingDB signs events with. The `verification_key` can be passed to `Event.verify_signature` when verifying events read from the database.
 
-The `start` function pulls the image if it is missing, and then waits until the database in the container answers a ping, for 30 seconds at most, not counting the pull. To change this time, call the `with_startup_timeout` function with the milliseconds:
+The `container` macro and the `start` function pull the image if it is missing, and then wait until the database in the container answers a ping, for 30 seconds at most, not counting the pull. To change this time, call the `with_startup_timeout` function with the milliseconds:
 
 ```elixir
-TestContainer.new()
-|> TestContainer.with_startup_timeout(60_000)
+container(
+  :esdb,
+  TestContainer.new()
+  |> TestContainer.with_startup_timeout(60_000)
+)
 ```
 
-If a container keeps running, but does not become reachable in time, `start` replaces it with a new one, up to three containers in total, and then returns an `EventSourcingDB.Errors.ContainerStartFailed`. If Docker fails, or if the container exits, `start` returns that error at once, which, if the container exited, contains the last 20 lines of its log. In any case, `start` removes every container that it failed to start.
+If a container keeps running, but does not become reachable in time, it is replaced with a new one, up to three containers in total. If Docker fails, or if the container exits, the start fails at once, and if the container exited, the error contains the last 20 lines of its log. The `container` macro raises the error, an `EventSourcingDB.Errors.ContainerStartFailed`, and the `start` function returns it. In any case, every container that failed to start is removed.
 
 ### Configuring the Client Manually
 
@@ -648,3 +670,5 @@ Version 2 of the client SDK talks to servers with the v2 API through it (see [Ta
 - **The client SDK asks a server for its API on the first request to it.** The first request to a server is preceded by `GET /api/v2/system/ping`, and reads over the v2 API use the method `QUERY`, which a proxy in front of EventSourcingDB has to let through. Over the v2 API, an error about a read itself, such as a malformed subject, arrives within the stream, so it is raised once you enumerate the stream.
   - Before: `EventSourcingDB.read_events(client, "malformed")` returned `{:error, %EventSourcingDB.Errors.ApiError{}}`
   - After: over the v2 API, `{:ok, events}`, and `Enum.to_list(events)` raises an `EventSourcingDB.Errors.DbApiError` with the code `EventSourcingDB.ErrorCode.subject_malformed()`
+
+To start the test container with the replacement, the cleanup, and the startup timeout of this SDK, switch the import of `Testcontainers.ExUnit` to `EventSourcingDB.TestContainer.ExUnit`.

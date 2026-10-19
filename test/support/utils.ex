@@ -35,6 +35,19 @@ defmodule EventSourcingDBTest.Utils do
     %{esdb: esdb}
   end
 
+  # The ids of the containers that carry the label of the given attempt to
+  # start a test container, whether they run or not.
+  @spec containers_of_attempt(String.t()) :: [String.t()]
+  def containers_of_attempt(attempt_id) do
+    {conn, _docker_host_url, _docker_host} = Testcontainers.Connection.get_connection()
+    filters = Jason.encode!(%{"label" => ["io.eventsourcingdb.container-start=#{attempt_id}"]})
+
+    {:ok, containers} =
+      DockerEngineAPI.Api.Container.container_list(conn, all: true, filters: filters)
+
+    Enum.map(containers, & &1."Id")
+  end
+
   # The API that the server in the container offers, which the test finds out
   # without the client SDK, so that it can expect what that API answers.
   @spec server_api(Testcontainers.Container.t()) :: :v1 | :v2

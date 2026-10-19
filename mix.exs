@@ -78,7 +78,8 @@ defmodule EventSourcingDB.MixProject do
           EventSourcingDB.ReadSubjectsOptions
         ],
         Testing: [
-          EventSourcingDB.TestContainer
+          EventSourcingDB.TestContainer,
+          EventSourcingDB.TestContainer.ExUnit
         ]
       ]
     ]
