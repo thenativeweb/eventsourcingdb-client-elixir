@@ -34,18 +34,28 @@ defmodule EventSourcingDB.TestContainer.Start do
   @log_tail_lines 20
   @removal_checks 50
 
+  # Req starts a pool of connections of its own for each set of connect
+  # options, which stays, so the pings always connect with the same options,
+  # and only the time they wait for an answer varies.
+  @ping_connect_options [timeout: @ping_timeout]
+
   @typedoc """
-  Lets tests change how a container is started and inspected. Each hook takes
-  the argument, and the function that would be called with it otherwise.
+  Lets tests change how a container is started, inspected, and removed. Each
+  hook takes the argument, and the function that would be called with it
+  otherwise.
   """
   @type hooks() :: [
           start_container: (Container.t(), (Container.t() -> term()) -> term()),
-          inspect_container: (String.t(), (String.t() -> inspection()) -> inspection())
+          inspect_container: (String.t(), (String.t() -> inspection()) -> inspection()),
+          remove_containers: (String.t(), (String.t() -> removal()) -> removal())
         ]
 
   # The status of a container, and the port on the host that Docker published
   # for the port of the database, if it did.
   @type inspection() :: {:ok, {String.t() | nil, pos_integer() | nil}} | {:error, term()}
+
+  # Whether removing the containers of an attempt worked.
+  @type removal() :: :ok | {:error, term()}
 
   @spec run(TestContainer.t(), hooks()) ::
           {:ok, Container.t()} | {:error, ContainerStartFailed.t()}
@@ -57,25 +67,45 @@ defmodule EventSourcingDB.TestContainer.Start do
       start_container:
         Keyword.get(hooks, :start_container, fn container, start -> start.(container) end),
       inspect_container:
-        Keyword.get(hooks, :inspect_container, fn id, inspect -> inspect.(id) end)
+        Keyword.get(hooks, :inspect_container, fn id, inspect -> inspect.(id) end),
+      remove_containers:
+        Keyword.get(hooks, :remove_containers, fn attempt_id, remove -> remove.(attempt_id) end)
     }
 
-    run(config, docker, @attempts)
+    run(config, docker, @attempts, [])
   end
 
-  defp run(config, _docker, 0) do
-    {:error,
-     %ContainerStartFailed{
-       message:
-         "failed to start the container, the database did not become reachable within " <>
-           "#{seconds(config.startup_timeout)}s in any of #{@attempts} containers"
-     }}
-  end
+  # Replaces a container that does not become reachable, even if removing it
+  # failed, as long as Docker works otherwise. The removals that failed are
+  # named after the message of the error, each on its own line, or logged if
+  # the start works in the end.
+  defp run(config, docker, attempts_left, failed_removals) do
+    {result, removal} = attempt(config, docker)
 
-  defp run(config, docker, attempts_left) do
-    case attempt(config, docker) do
-      :unreachable -> run(config, docker, attempts_left - 1)
-      result -> result
+    failed_removals =
+      case removal do
+        :ok -> failed_removals
+        {:error, reason} -> failed_removals ++ [reason]
+      end
+
+    case result do
+      :unreachable when attempts_left > 1 ->
+        run(config, docker, attempts_left - 1, failed_removals)
+
+      :unreachable ->
+        {:error, with_removals(unreachable_error(config), failed_removals)}
+
+      {:error, error} ->
+        {:error, with_removals(error, failed_removals)}
+
+      {:ok, container} ->
+        for reason <- failed_removals do
+          Logger.warning(
+            "failed to remove the container of an attempt that failed: #{describe(reason)}"
+          )
+        end
+
+        {:ok, container}
     end
   end
 
@@ -213,7 +243,7 @@ defmodule EventSourcingDB.TestContainer.Start do
           retry: false,
           redirect: false,
           decode_body: false,
-          connect_options: [timeout: timeout],
+          connect_options: @ping_connect_options,
           receive_timeout: timeout
         )
 
@@ -224,11 +254,10 @@ defmodule EventSourcingDB.TestContainer.Start do
   end
 
   # Removes the containers of an attempt that failed, and turns the outcome
-  # into the result of the attempt. A container that Testcontainers handed out
-  # is stopped through Testcontainers, so that Testcontainers forgets it, too.
-  # If the removal fails, Docker failed, so the attempt does not replace the
-  # container, and an error of its own names the removal after its message.
-  defp finish({:ok, container}, _docker, _attempt_id, _container), do: {:ok, container}
+  # into the result of the attempt, along with whether the removal worked. A
+  # container that Testcontainers handed out is stopped through
+  # Testcontainers, so that Testcontainers forgets it, too.
+  defp finish({:ok, container}, _docker, _attempt_id, _container), do: {{:ok, container}, :ok}
 
   defp finish(outcome, docker, attempt_id, container) do
     if container do
@@ -236,11 +265,20 @@ defmodule EventSourcingDB.TestContainer.Start do
       Testcontainers.stop_container(container.container_id)
     end
 
-    case {outcome, remove_containers(docker, attempt_id)} do
-      {:unreachable, :ok} -> :unreachable
-      {:unreachable, {:error, reason}} -> {:error, docker_error(reason)}
-      {outcome, removal} -> {:error, with_removal(error(outcome), removal)}
+    removal = remove(docker, attempt_id)
+
+    case outcome do
+      :unreachable -> {:unreachable, removal}
+      outcome -> {{:error, error(outcome)}, removal}
     end
+  end
+
+  defp unreachable_error(config) do
+    %ContainerStartFailed{
+      message:
+        "failed to start the container, the database did not become reachable within " <>
+          "#{seconds(config.startup_timeout)}s in any of #{@attempts} containers"
+    }
   end
 
   defp error({:exited, {:ok, log_tail}}) do
@@ -268,10 +306,11 @@ defmodule EventSourcingDB.TestContainer.Start do
     }
   end
 
-  defp with_removal(error, :ok), do: error
+  defp with_removals(%ContainerStartFailed{} = error, failed_removals) do
+    removals =
+      Enum.map_join(failed_removals, &"\nfailed to remove the container: #{describe(&1)}")
 
-  defp with_removal(%ContainerStartFailed{} = error, {:error, reason}) do
-    %{error | message: error.message <> "\nfailed to remove the container: #{describe(reason)}"}
+    %{error | message: error.message <> removals}
   end
 
   # Starts the container, hands it out to the attempt, and waits for the
@@ -312,11 +351,15 @@ defmodule EventSourcingDB.TestContainer.Start do
       Testcontainers.stop_container(container_id)
     end
 
-    with {:error, reason} <- remove_containers(docker, attempt_id) do
+    with {:error, reason} <- remove(docker, attempt_id) do
       Logger.warning(
         "failed to remove the container of a start that was given up: #{describe(reason)}"
       )
     end
+  end
+
+  defp remove(docker, attempt_id) do
+    docker.remove_containers.(attempt_id, &remove_containers(docker, &1))
   end
 
   # Removes the containers with the label of the attempt, and checks that

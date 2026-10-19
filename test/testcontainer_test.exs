@@ -13,6 +13,8 @@ defmodule EventSourcingDBTest.TestContainer do
   # them is left, so they run one after the other, and not at the same time as
   # the tests of other modules.
 
+  @moduletag timeout: container_test_timeout()
+
   @start_label "io.eventsourcingdb.container-start"
 
   test "starts with a custom port" do
@@ -184,6 +186,59 @@ defmodule EventSourcingDBTest.TestContainer do
       assert elapsed >= 3 * @startup_timeout
       assert elapsed < 30_000
     end
+  end
+
+  test "names a removal that failed after the message, on its own line" do
+    attempts = record_attempts()
+
+    start_container = fn container, start ->
+      record(attempts, container)
+      start.(listening_elsewhere(container))
+    end
+
+    # Removing the first container fails, which does not keep the start
+    # from replacing it, and so does removing the last one.
+    remove_containers = fn attempt_id, remove ->
+      case attempt_ids(attempts) do
+        [^attempt_id] -> {:error, :first_removal_failed}
+        [_first, _second, ^attempt_id] -> {:error, :last_removal_failed}
+        _attempt_ids -> remove.(attempt_id)
+      end
+    end
+
+    config = TestContainer.with_startup_timeout(test_container(), 1_000)
+
+    assert Start.run(config,
+             start_container: start_container,
+             remove_containers: remove_containers
+           ) ==
+             {:error,
+              %ContainerStartFailed{
+                message:
+                  "failed to start the container, the database did not become reachable " <>
+                    "within 1s in any of 3 containers\n" <>
+                    "failed to remove the container: :first_removal_failed\n" <>
+                    "failed to remove the container: :last_removal_failed"
+              }}
+
+    assert length(attempt_ids(attempts)) == 3
+  end
+
+  test "pings through the same pool of connections, whatever time is left" do
+    attempts = record_attempts()
+
+    start_container = fn container, start ->
+      record(attempts, container)
+      start.(listening_elsewhere(container))
+    end
+
+    config = TestContainer.with_startup_timeout(test_container(), 1_500)
+    pools_before = DynamicSupervisor.count_children(Req.FinchSupervisor).active
+
+    assert {:error, %ContainerStartFailed{}} = Start.run(config, start_container: start_container)
+
+    # Req starts a pool of its own for each set of connect options.
+    assert DynamicSupervisor.count_children(Req.FinchSupervisor).active <= pools_before + 1
   end
 
   test "fails at once if the container exits, and names the end of its log" do
