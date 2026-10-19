@@ -4,7 +4,9 @@ defmodule EventSourcingDBTest.FakeServer do
   # A local HTTP/1 server that stands in for EventSourcingDB in tests that send
   # several requests, or that need control over each answer. It accepts every
   # connection, keeps it alive, and answers each request on it with what the
-  # handler returns for the request, a map of :method, :path, and :body:
+  # handler returns for the request, a map of :method, :path, :headers, and
+  # :body, whose headers map the name of each header, in lowercase, to its
+  # value:
   #
   #   * {status, body} or {status, headers, body} - an answer, whose headers
   #     the Server header of EventSourcingDB precedes, unless they name one
@@ -112,7 +114,8 @@ defmodule EventSourcingDBTest.FakeServer do
 
         with {:ok, rest} <- receive_at_least(socket, rest, length) do
           <<body::binary-size(length), rest::binary>> = rest
-          {:ok, %{method: method, path: path, body: body}, rest}
+          request = %{method: method, path: path, headers: headers(header_lines), body: body}
+          {:ok, request, rest}
         end
 
       [_incomplete] ->
@@ -130,6 +133,13 @@ defmodule EventSourcingDBTest.FakeServer do
       {:ok, more} -> receive_at_least(socket, data <> more, length)
       {:error, _reason} -> :closed
     end
+  end
+
+  defp headers(header_lines) do
+    Map.new(header_lines, fn line ->
+      [name, value] = String.split(line, ":", parts: 2)
+      {String.downcase(name), String.trim(value)}
+    end)
   end
 
   defp content_length(header_lines) do

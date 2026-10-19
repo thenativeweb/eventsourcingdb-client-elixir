@@ -33,6 +33,9 @@ defmodule EventSourcingDB.Transport do
   # retried only before a ping, as the ping would be, and makes a single
   # attempt before every other call, which Req never retries.
   #
+  # Like the ping, the probe carries no API token, since EventSourcingDB
+  # answers the v2 ping without one.
+  #
   # A 404 or 405 means the v1 API even if it does not come from
   # EventSourcingDB, such as from a proxy that forwards only the v1 API, since
   # every request of the v1 API checks that its answer does. Every other answer
@@ -40,7 +43,7 @@ defmodule EventSourcingDB.Transport do
   defp probe(client, call) do
     options = if call == :ping, do: [], else: [retry: false]
 
-    case HTTP.unchecked_one_shot(client, :get, @probe_path, nil, options) do
+    case HTTP.unchecked_one_shot(client, :get, @probe_path, nil, [authorize: false] ++ options) do
       {:ok, %Req.Response{status: status}} when status in [404, 405] ->
         {:ok, :v1}
 

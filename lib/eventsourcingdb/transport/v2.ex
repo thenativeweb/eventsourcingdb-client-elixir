@@ -29,9 +29,10 @@ defmodule EventSourcingDB.Transport.V2 do
   # region Requests with a single answer
   #
 
+  # A ping carries no API token, since EventSourcingDB answers it without one.
   @impl true
   def ping(client) do
-    with {:ok, envelope} <- request(client, :get, "/api/v2/system/ping", nil) do
+    with {:ok, envelope} <- request(client, :get, "/api/v2/system/ping", nil, authorize: false) do
       case envelope do
         %{"type" => "event", "data" => %{"type" => "io.eventsourcingdb.api.ping-received"}} -> :ok
         _other -> {:error, %PingFailed{}}
@@ -65,8 +66,8 @@ defmodule EventSourcingDB.Transport.V2 do
 
   # A single answer is an envelope, which may hold an error that the server
   # reports at status 200, while another status carries the text of an error.
-  defp request(client, method, path, body) do
-    case HTTP.one_shot(client, method, path, body) do
+  defp request(client, method, path, body, options \\ []) do
+    case HTTP.one_shot(client, method, path, body, options) do
       {:ok, %Req.Response{status: 200, body: text}} ->
         envelope(text)
 
