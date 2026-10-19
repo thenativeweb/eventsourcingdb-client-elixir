@@ -199,6 +199,11 @@ defmodule EventSourcingDB.TestContainer do
   container fails to start, `start` removes it.
 
   Returns `{:ok, container}`, or `{:error, %EventSourcingDB.Errors.ContainerStartFailed{}}`.
+
+  Starting the container with `Testcontainers.start_container/1` instead, as
+  the `container` macro of `Testcontainers.ExUnit` does, waits for the
+  database as before, without the startup timeout, and without replacing the
+  container.
   """
   @spec start(t()) :: {:ok, Container.t()} | {:error, ContainerStartFailed.t()}
   def start(%__MODULE__{} = config), do: Start.run(config)
@@ -295,8 +300,11 @@ defmodule EventSourcingDB.TestContainer do
 
     @image_name "thenativeweb/eventsourcingdb"
 
-    # The container is ready once EventSourcingDB answers its ping, and a
-    # container that answers within 10 seconds is always found ready.
+    # When Testcontainers starts the container itself, as the container macro
+    # of Testcontainers.ExUnit does, the container is ready once
+    # EventSourcingDB answers its ping, and a container that answers within
+    # 10 seconds is always found ready. TestContainer.start/1 leaves this wait
+    # out, and waits on its own instead.
     #
     # HttpWaitStrategy pauses between its attempts for 0.5 seconds at first,
     # doubling up to 5 seconds, so after the 10 seconds, another attempt
