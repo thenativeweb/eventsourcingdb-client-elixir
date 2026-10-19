@@ -82,6 +82,20 @@ If you do not set `stall_timeout`, but pass a `receive_timeout` on to Req via `r
 
 *Note that over HTTP/2, a request with a single answer must be answered completely within the stall timeout, since there [Finch](https://hexdocs.pm/finch) bounds the request as a whole rather than each wait for data. Over the v2 API, these are `ping`, `verify_api_token`, and `read_event_type`, and over the v1 API, writing events and registering an event schema as well. Streams are not affected.*
 
+### Aborting a Call
+
+To limit how long a single call may take, pass the `timeout` option to it, in milliseconds. Every function takes it as its last argument, and in place of an optional argument before, such as the preconditions of a write or the options struct of a read:
+
+```elixir
+EventSourcingDB.read_event_type(client, "io.eventsourcingdb.library.book-acquired", timeout: 5_000)
+EventSourcingDB.write_events(client, [event], timeout: 5_000)
+EventSourcingDB.observe_events(client, "/books/42", timeout: 60_000)
+```
+
+Once the time runs out, the client SDK aborts the request, and the call returns an `EventSourcingDB.Errors.CallTimedOut`. For a function that returns a stream, the time includes reading the stream, which raises the error once the time runs out, so observing events with a timeout ends after it. A write that times out before its request had a connection returns the error itself, and one that times out later returns it wrapped in an `EventSourcingDB.Errors.OutcomeUnknown`, since EventSourcingDB may have stored it (see [Handling Errors](#handling-errors)). The stall timeout keeps applying as well, and each of the two fails with its own error.
+
+You can also run a call in a `Task`, and shut the task down once you no longer want to wait, for example with `Task.yield/2` and `Task.shutdown/2`. A write that is stopped that way returns nothing, not even an `OutcomeUnknown`, so for writes, prefer the `timeout` option.
+
 ## Writing Events
 
 Call the `write_events` function and hand over a list with one or more events. You do not have to provide all event fields – some are automatically added by the server.

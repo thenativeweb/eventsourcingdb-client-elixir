@@ -26,6 +26,25 @@ defmodule EventSourcingDB do
   }
 
   alias EventSourcingDB.Transport
+  alias EventSourcingDB.Transport.Deadline
+
+  @timeout_option """
+  ## Options
+
+  - `:timeout` - How many milliseconds the call may take at most. Once they ran out, the client SDK aborts the request, and the call returns an `EventSourcingDB.Errors.CallTimedOut`. Without it, the stall timeout of the client alone bounds the call (see `EventSourcingDB.Client`)
+  """
+
+  @stream_timeout_option """
+  ## Options
+
+  - `:timeout` - How many milliseconds the call may take at most, including reading the stream. Once they ran out, the client SDK aborts the request, and the call returns an `EventSourcingDB.Errors.CallTimedOut`, or the stream raises it. Without it, the stall timeout of the client alone bounds the call (see `EventSourcingDB.Client`)
+  """
+
+  @write_timeout_option """
+  ## Options
+
+  - `:timeout` - How many milliseconds the call may take at most. Once they ran out, the client SDK aborts the request, and the call returns an `EventSourcingDB.Errors.CallTimedOut`, or, once the request had a connection, an `EventSourcingDB.Errors.OutcomeUnknown` with that error as its `cause`. Without it, the stall timeout of the client alone bounds the call (see `EventSourcingDB.Client`)
+  """
 
   #
   # region Public API
@@ -70,10 +89,13 @@ defmodule EventSourcingDB do
       iex> client = EventSourcingDB.Client.new("http://localhost:3000", "secrettoken")
       iex> EventSourcingDB.ping(client)
       :ok
+
+  #{@timeout_option}
   """
-  @spec ping(Client.t()) :: primitive_response()
-  def ping(client) do
-    with_api(client, :ping, & &1.ping(client))
+  @spec ping(Client.t(), keyword()) :: primitive_response()
+  def ping(client, opts \\ []) do
+    deadline = deadline!(opts)
+    with_api(client, deadline, :ping, & &1.ping(client, deadline))
   end
 
   @doc """
@@ -84,10 +106,13 @@ defmodule EventSourcingDB do
       iex> client = EventSourcingDB.Client.new("http://localhost:3000", "secrettoken")
       iex> EventSourcingDB.verify_api_token(client)
       :ok
+
+  #{@timeout_option}
   """
-  @spec verify_api_token(Client.t()) :: primitive_response()
-  def verify_api_token(client) do
-    with_api(client, & &1.verify_api_token(client))
+  @spec verify_api_token(Client.t(), keyword()) :: primitive_response()
+  def verify_api_token(client, opts \\ []) do
+    deadline = deadline!(opts)
+    with_api(client, deadline, & &1.verify_api_token(client, deadline))
   end
 
   @doc """
@@ -204,17 +229,35 @@ defmodule EventSourcingDB do
   ```
 
   If the write fails in a way that leaves open whether EventSourcingDB stored it, for example because the connection stalled or broke after the request was sent, the function returns an `EventSourcingDB.Errors.OutcomeUnknown`, which holds the error as its `cause`. EventSourcingDB never stores a write halfway, so before you repeat it, find out whether it was stored, for example by reading the events of the subject. Every other error means that the events were not stored.
+
+  The options may take the place of the preconditions, as in `write_events(client, [event], timeout: 5_000)`.
+
+  #{@write_timeout_option}
   """
-  @spec write_events(Client.t(), nonempty_list(EventCandidate.t()), [precondition()]) ::
-          response(Event.t())
-  def write_events(client, events, preconditions \\ []) when is_list(events) do
-    with_api(client, & &1.write_events(client, events, preconditions))
+  @spec write_events(
+          Client.t(),
+          nonempty_list(EventCandidate.t()),
+          [precondition()] | keyword(),
+          keyword()
+        ) :: response(Event.t())
+  def write_events(client, events, preconditions \\ [], opts \\ [])
+
+  def write_events(client, events, [{key, _value} | _rest] = opts, []) when is_atom(key),
+    do: write_events(client, events, [], opts)
+
+  def write_events(client, events, preconditions, opts) when is_list(events) do
+    deadline = deadline!(opts)
+    with_api(client, deadline, & &1.write_events(client, events, preconditions, deadline))
   end
 
-  @spec write_events!(Client.t(), nonempty_list(EventCandidate.t()), [precondition()]) ::
-          response!(Event.t())
-  def write_events!(client, events, preconditions \\ []) when is_list(events) do
-    unwrap!(write_events(client, events, preconditions))
+  @spec write_events!(
+          Client.t(),
+          nonempty_list(EventCandidate.t()),
+          [precondition()] | keyword(),
+          keyword()
+        ) :: response!(Event.t())
+  def write_events!(client, events, preconditions \\ [], opts \\ []) when is_list(events) do
+    unwrap!(write_events(client, events, preconditions, opts))
   end
 
   @doc """
@@ -315,17 +358,26 @@ defmodule EventSourcingDB do
 
   *Note that `from_latest_event` and `lower_bound` can not be provided at the same time.*
 
+  The options of the call may take the place of the options struct, as in `read_events(client, "/books/42", timeout: 5_000)`.
+
+  #{@stream_timeout_option}
   """
-  @spec read_events(Client.t(), String.t(), ReadEventsOptions.t() | nil) ::
+  @spec read_events(Client.t(), String.t(), ReadEventsOptions.t() | keyword() | nil, keyword()) ::
           stream_response(Event.t())
-  def read_events(client, subject, options \\ nil) do
-    with_api(client, & &1.read_events(client, subject, options))
+  def read_events(client, subject, options \\ nil, opts \\ [])
+
+  def read_events(client, subject, opts, []) when is_list(opts),
+    do: read_events(client, subject, nil, opts)
+
+  def read_events(client, subject, options, opts) do
+    deadline = deadline!(opts)
+    with_api(client, deadline, & &1.read_events(client, subject, options, deadline))
   end
 
-  @spec read_events!(Client.t(), String.t(), ReadEventsOptions.t() | nil) ::
+  @spec read_events!(Client.t(), String.t(), ReadEventsOptions.t() | keyword() | nil, keyword()) ::
           stream_response!(Event.t())
-  def read_events!(client, subject, options \\ nil) do
-    unwrap!(read_events(client, subject, options))
+  def read_events!(client, subject, options \\ nil, opts \\ []) do
+    unwrap!(read_events(client, subject, options, opts))
   end
 
   @doc """
@@ -407,17 +459,34 @@ defmodule EventSourcingDB do
 
   *Note that `from_latest_event` and `lower_bound` can not be provided at the same time.*
 
+  The options of the call may take the place of the options struct, as in `observe_events(client, "/books/42", timeout: 60_000)`, which ends the observation after a minute.
+
+  #{@stream_timeout_option}
   """
-  @spec observe_events(Client.t(), String.t(), ObserveEventsOptions.t() | nil) ::
-          stream_response(Event.t())
-  def observe_events(client, subject, options \\ nil) do
-    with_api(client, & &1.observe_events(client, subject, options))
+  @spec observe_events(
+          Client.t(),
+          String.t(),
+          ObserveEventsOptions.t() | keyword() | nil,
+          keyword()
+        ) :: stream_response(Event.t())
+  def observe_events(client, subject, options \\ nil, opts \\ [])
+
+  def observe_events(client, subject, opts, []) when is_list(opts),
+    do: observe_events(client, subject, nil, opts)
+
+  def observe_events(client, subject, options, opts) do
+    deadline = deadline!(opts)
+    with_api(client, deadline, & &1.observe_events(client, subject, options, deadline))
   end
 
-  @spec observe_events!(Client.t(), String.t(), ObserveEventsOptions.t() | nil) ::
-          stream_response!(Event.t())
-  def observe_events!(client, subject, options \\ nil) do
-    unwrap!(observe_events(client, subject, options))
+  @spec observe_events!(
+          Client.t(),
+          String.t(),
+          ObserveEventsOptions.t() | keyword() | nil,
+          keyword()
+        ) :: stream_response!(Event.t())
+  def observe_events!(client, subject, options \\ nil, opts \\ []) do
+    unwrap!(observe_events(client, subject, options, opts))
   end
 
   @doc """
@@ -438,15 +507,17 @@ defmodule EventSourcingDB do
 
   If anything else goes wrong while you enumerate the stream, the stream closes the connection as well and raises the corresponding error: an `EventSourcingDB.Errors.DbApiError` if EventSourcingDB reports an error, an `EventSourcingDB.Errors.TransmissionError` if the connection fails, an `EventSourcingDB.Errors.InvalidResponseType` if the response contains an item of an unexpected type, or a `Jason.DecodeError` if the response is not valid JSON.
 
+  #{@stream_timeout_option}
   """
-  @spec run_eventql_query(Client.t(), String.t()) :: stream_response(any())
-  def run_eventql_query(client, query) do
-    with_api(client, & &1.run_eventql_query(client, query))
+  @spec run_eventql_query(Client.t(), String.t(), keyword()) :: stream_response(any())
+  def run_eventql_query(client, query, opts \\ []) do
+    deadline = deadline!(opts)
+    with_api(client, deadline, & &1.run_eventql_query(client, query, deadline))
   end
 
-  @spec run_eventql_query!(Client.t(), String.t()) :: stream_response!(any())
-  def run_eventql_query!(client, query) do
-    unwrap!(run_eventql_query(client, query))
+  @spec run_eventql_query!(Client.t(), String.t(), keyword()) :: stream_response!(any())
+  def run_eventql_query!(client, query, opts \\ []) do
+    unwrap!(run_eventql_query(client, query, opts))
   end
 
   @doc """
@@ -475,16 +546,21 @@ defmodule EventSourcingDB do
   ```
 
   As for writing events, the function returns an `EventSourcingDB.Errors.OutcomeUnknown` if it fails in a way that leaves open whether EventSourcingDB registered the schema, and an `EventSourcingDB.Errors.DbApiError` if EventSourcingDB refuses it, for example with the code `EventSourcingDB.ErrorCode.event_schema_already_registered/0`.
+
+  #{@write_timeout_option}
   """
-  @spec register_event_schema(Client.t(), String.t(), map()) :: response(ManagementEvent.t())
-  def register_event_schema(client, event_type, schema) do
+  @spec register_event_schema(Client.t(), String.t(), map(), keyword()) ::
+          response(ManagementEvent.t())
+  def register_event_schema(client, event_type, schema, opts \\ []) do
+    deadline = deadline!(opts)
     ExJsonSchema.Schema.resolve(schema)
-    with_api(client, & &1.register_event_schema(client, event_type, schema))
+    with_api(client, deadline, & &1.register_event_schema(client, event_type, schema, deadline))
   end
 
-  @spec register_event_schema!(Client.t(), String.t(), map()) :: response!(ManagementEvent.t())
-  def register_event_schema!(client, event_type, schema) do
-    unwrap!(register_event_schema(client, event_type, schema))
+  @spec register_event_schema!(Client.t(), String.t(), map(), keyword()) ::
+          response!(ManagementEvent.t())
+  def register_event_schema!(client, event_type, schema, opts \\ []) do
+    unwrap!(register_event_schema(client, event_type, schema, opts))
   end
 
   @doc """
@@ -516,18 +592,21 @@ defmodule EventSourcingDB do
   ```
 
   The options are required. Without a `recursive` option of `true` or `false`, the function raises an `ArgumentError`.
+
+  #{@stream_timeout_option}
   """
-  @spec read_subjects(Client.t(), String.t(), ReadSubjectsOptions.t()) ::
+  @spec read_subjects(Client.t(), String.t(), ReadSubjectsOptions.t(), keyword()) ::
           stream_response(String.t())
-  def read_subjects(client, subject, options) do
+  def read_subjects(client, subject, options, opts \\ []) do
     recursive = recursive!(options)
-    with_api(client, & &1.read_subjects(client, subject, recursive))
+    deadline = deadline!(opts)
+    with_api(client, deadline, & &1.read_subjects(client, subject, recursive, deadline))
   end
 
-  @spec read_subjects!(Client.t(), String.t(), ReadSubjectsOptions.t()) ::
+  @spec read_subjects!(Client.t(), String.t(), ReadSubjectsOptions.t(), keyword()) ::
           stream_response!(String.t())
-  def read_subjects!(client, subject, options) do
-    unwrap!(read_subjects(client, subject, options))
+  def read_subjects!(client, subject, options, opts \\ []) do
+    unwrap!(read_subjects(client, subject, options, opts))
   end
 
   defp recursive!(%ReadSubjectsOptions{recursive: recursive}) when is_boolean(recursive),
@@ -550,15 +629,18 @@ defmodule EventSourcingDB do
     {:error, reason} -> # ...
   end
   ```
+
+  #{@timeout_option}
   """
-  @spec read_event_type(Client.t(), String.t()) :: response(EventType.t())
-  def read_event_type(client, event_type) do
-    with_api(client, & &1.read_event_type(client, event_type))
+  @spec read_event_type(Client.t(), String.t(), keyword()) :: response(EventType.t())
+  def read_event_type(client, event_type, opts \\ []) do
+    deadline = deadline!(opts)
+    with_api(client, deadline, & &1.read_event_type(client, event_type, deadline))
   end
 
-  @spec read_event_type!(Client.t(), String.t()) :: response!(EventType.t())
-  def read_event_type!(client, event_type) do
-    unwrap!(read_event_type(client, event_type))
+  @spec read_event_type!(Client.t(), String.t(), keyword()) :: response!(EventType.t())
+  def read_event_type!(client, event_type, opts \\ []) do
+    unwrap!(read_event_type(client, event_type, opts))
   end
 
   @doc """
@@ -574,15 +656,18 @@ defmodule EventSourcingDB do
   ```
 
   If something goes wrong while you enumerate the stream, the stream closes the connection and raises the corresponding error: an `EventSourcingDB.Errors.DbApiError` if EventSourcingDB reports an error, an `EventSourcingDB.Errors.ConnectionStalled` if nothing arrives for the stall timeout of the client (see `EventSourcingDB.Client`), an `EventSourcingDB.Errors.TransmissionError` if the connection fails, an `EventSourcingDB.Errors.InvalidResponseType` if the response contains an item of an unexpected type, or a `Jason.DecodeError` if the response is not valid JSON.
+
+  #{@stream_timeout_option}
   """
-  @spec read_event_types(Client.t()) :: stream_response(EventType.t())
-  def read_event_types(client) do
-    with_api(client, & &1.read_event_types(client))
+  @spec read_event_types(Client.t(), keyword()) :: stream_response(EventType.t())
+  def read_event_types(client, opts \\ []) do
+    deadline = deadline!(opts)
+    with_api(client, deadline, & &1.read_event_types(client, deadline))
   end
 
-  @spec read_event_types!(Client.t()) :: stream_response!(EventType.t())
-  def read_event_types!(client) do
-    unwrap!(read_event_types(client))
+  @spec read_event_types!(Client.t(), keyword()) :: stream_response!(EventType.t())
+  def read_event_types!(client, opts \\ []) do
+    unwrap!(read_event_types(client, opts))
   end
 
   #
@@ -590,10 +675,30 @@ defmodule EventSourcingDB do
   #
 
   # Runs the call on the API that the client talks to the server through.
-  defp with_api(client, kind \\ :other, call) do
-    case Transport.api(client, kind) do
+  # The deadline of a call that was given a timeout bounds asking the server
+  # for its API as well.
+  defp with_api(client, deadline, kind \\ :other, call) do
+    case Transport.api(client, kind, deadline) do
       {:ok, api} -> call.(api)
       {:error, reason} -> {:error, reason}
+    end
+  end
+
+  # The deadline of a call, from the timeout in its options, which is a
+  # positive integer of milliseconds, as the stall timeout of a client is.
+  defp deadline!(opts) do
+    opts = Keyword.validate!(opts, [:timeout])
+
+    case Keyword.fetch(opts, :timeout) do
+      :error ->
+        nil
+
+      {:ok, timeout} when is_integer(timeout) and timeout > 0 ->
+        Deadline.new(timeout)
+
+      {:ok, timeout} ->
+        raise ArgumentError,
+              "expected :timeout to be a positive integer of milliseconds, got: #{inspect(timeout)}"
     end
   end
 

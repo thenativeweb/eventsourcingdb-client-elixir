@@ -23,8 +23,9 @@ defmodule EventSourcingDB.Transport.V1 do
 
   # A ping carries no API token, since EventSourcingDB answers it without one.
   @impl true
-  def ping(client) do
-    with {:ok, body} <- request(client, :ping, :get, "/api/v1/ping", nil, authorize: false) do
+  def ping(client, deadline) do
+    with {:ok, body} <-
+           request(client, :ping, :get, "/api/v1/ping", nil, authorize: false, deadline: deadline) do
       case body do
         %{"type" => "io.eventsourcingdb.api.ping-received"} -> :ok
         _other -> {:error, %PingFailed{}}
@@ -33,8 +34,11 @@ defmodule EventSourcingDB.Transport.V1 do
   end
 
   @impl true
-  def verify_api_token(client) do
-    with {:ok, body} <- request(client, :verify_api_token, :post, "/api/v1/verify-api-token", %{}) do
+  def verify_api_token(client, deadline) do
+    with {:ok, body} <-
+           request(client, :verify_api_token, :post, "/api/v1/verify-api-token", %{},
+             deadline: deadline
+           ) do
       case body do
         %{"type" => "io.eventsourcingdb.api.api-token-verified"} -> :ok
         _other -> {:error, %InvalidEventType{}}
@@ -43,11 +47,11 @@ defmodule EventSourcingDB.Transport.V1 do
   end
 
   @impl true
-  def write_events(client, events, preconditions) do
+  def write_events(client, events, preconditions, deadline) do
     body = %{events: events, preconditions: preconditions}
 
     client
-    |> HTTP.one_shot(:post, "/api/v1/write-events", body, track_sending: true)
+    |> HTTP.one_shot(:post, "/api/v1/write-events", body, track_sending: true, deadline: deadline)
     |> text_body(:write_events)
     |> then(fn result -> with {:ok, text} <- result, do: written_events(text) end)
     |> WriteOutcome.classify(:v1)
@@ -77,12 +81,13 @@ defmodule EventSourcingDB.Transport.V1 do
   end
 
   @impl true
-  def register_event_schema(client, event_type, schema) do
+  def register_event_schema(client, event_type, schema, deadline) do
     body = %{eventType: event_type, schema: schema}
 
     client
     |> request(:register_event_schema, :post, "/api/v1/register-event-schema", body,
-      track_sending: true
+      track_sending: true,
+      deadline: deadline
     )
     |> then(fn result -> with {:ok, body} <- result, do: schema_registered(body) end)
     |> WriteOutcome.classify(:v1)
@@ -102,16 +107,18 @@ defmodule EventSourcingDB.Transport.V1 do
   defp rename_event_type(data), do: data
 
   @impl true
-  def read_event_type(client, event_type) do
+  def read_event_type(client, event_type, deadline) do
+    body = %{eventType: event_type}
+
     with {:ok, body} <-
-           request(client, :read_event_type, :post, "/api/v1/read-event-type", %{
-             eventType: event_type
-           }) do
+           request(client, :read_event_type, :post, "/api/v1/read-event-type", body,
+             deadline: deadline
+           ) do
       {:ok, event_type(body)}
     end
   end
 
-  defp request(client, operation, method, path, body, options \\ []) do
+  defp request(client, operation, method, path, body, options) do
     client
     |> HTTP.one_shot(method, path, body, options)
     |> text_body(operation)
@@ -188,34 +195,37 @@ defmodule EventSourcingDB.Transport.V1 do
   #
 
   @impl true
-  def read_events(client, subject, options) do
+  def read_events(client, subject, options, deadline) do
     stream(client, :read_events, "/api/v1/read-events", subject_body(subject, options),
       type: "event",
       process: &event/2,
-      heartbeats?: false
+      heartbeats?: false,
+      deadline: deadline
     )
   end
 
   # The server sends a heartbeat every second while there is nothing else to
   # send, and never ends observing events.
   @impl true
-  def observe_events(client, subject, options) do
+  def observe_events(client, subject, options, deadline) do
     stream(client, :observe_events, "/api/v1/observe-events", subject_body(subject, options),
       type: "event",
       process: &event/2,
       heartbeats?: true,
-      ending: :never
+      ending: :never,
+      deadline: deadline
     )
   end
 
   @impl true
-  def run_eventql_query(client, query) do
+  def run_eventql_query(client, query, deadline) do
     # The server sends a heartbeat every second while there is nothing else to
     # send.
     stream(client, :run_eventql_query, "/api/v1/run-eventql-query", %{query: query},
       type: "row",
       process: fn row, _line -> row end,
-      heartbeats?: true
+      heartbeats?: true,
+      deadline: deadline
     )
   end
 
@@ -224,12 +234,13 @@ defmodule EventSourcingDB.Transport.V1 do
   # a slash, followed by the subject without its leading and trailing
   # slashes.
   @impl true
-  def read_subjects(client, subject, recursive) do
+  def read_subjects(client, subject, recursive, deadline) do
     result =
       stream(client, :read_subjects, "/api/v1/read-subjects", %{baseSubject: subject},
         type: "subject",
         process: fn payload, _line -> payload["subject"] end,
-        heartbeats?: false
+        heartbeats?: false,
+        deadline: deadline
       )
 
     case result do
@@ -243,11 +254,12 @@ defmodule EventSourcingDB.Transport.V1 do
   end
 
   @impl true
-  def read_event_types(client) do
+  def read_event_types(client, deadline) do
     stream(client, :read_event_types, "/api/v1/read-event-types", %{},
       type: "eventType",
       process: fn payload, _line -> event_type(payload) end,
-      heartbeats?: false
+      heartbeats?: false,
+      deadline: deadline
     )
   end
 
@@ -256,7 +268,8 @@ defmodule EventSourcingDB.Transport.V1 do
       decode: decoder(Keyword.fetch!(options, :type), Keyword.fetch!(options, :process)),
       heartbeats?: Keyword.fetch!(options, :heartbeats?),
       ending: Keyword.get(options, :ending, :response),
-      status_error: &status_error(operation, &1, &2)
+      status_error: &status_error(operation, &1, &2),
+      deadline: Keyword.fetch!(options, :deadline)
     )
   end
 

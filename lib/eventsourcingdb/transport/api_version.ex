@@ -13,6 +13,10 @@ defmodule EventSourcingDB.Transport.ApiVersion do
   # to probe, and the others wait for its result, which they share, whether
   # it is an API or an error. Should the probing process go down, or raise,
   # before it has a result, the next waiting process probes instead.
+  #
+  # A request of a call with a timeout probes on its own, with share: false,
+  # so that it neither waits for a probe that its timeout does not bound, nor
+  # hands its own timeout on to the requests that would share its probe.
 
   use GenServer
 
@@ -28,13 +32,14 @@ defmodule EventSourcingDB.Transport.ApiVersion do
 
   # Returns the API of the server of the client, and probes for it if it is
   # unknown.
-  @spec resolve(Client.t(), probe()) :: {:ok, version()} | {:error, Exception.t()}
-  def resolve(%Client{} = client, probe) do
+  @spec resolve(Client.t(), probe(), keyword()) :: {:ok, version()} | {:error, Exception.t()}
+  def resolve(%Client{} = client, probe, options \\ []) do
     server = server(client)
 
-    case known(server) do
-      nil -> join(server, probe)
-      version -> {:ok, version}
+    case {known(server), Keyword.get(options, :share, true)} do
+      {nil, true} -> join(server, probe)
+      {nil, false} -> probe_and_remember(server, probe)
+      {version, _share} -> {:ok, version}
     end
   end
 

@@ -11,17 +11,20 @@ defmodule EventSourcingDB.Transport do
   # does, with or without its UI. The answer is remembered for the client.
   # Anything else, such as a failed connection or a 5xx, fails the request
   # with that error, and leaves the API unknown, so that the next request
-  # asks again.
+  # asks again. For a call with a timeout, the deadline of the call bounds
+  # asking as well.
 
   alias EventSourcingDB.Client
   alias EventSourcingDB.Errors.{DbApiError, InvalidResponseType, PingFailed, TransmissionError}
-  alias EventSourcingDB.Transport.{ApiVersion, HTTP, V1, V2}
+  alias EventSourcingDB.Transport.{ApiVersion, Deadline, HTTP, V1, V2}
 
   @probe_path "/api/v2/system/ping"
 
-  @spec api(Client.t(), atom()) :: {:ok, module()} | {:error, Exception.t()}
-  def api(%Client{} = client, call \\ :other) do
-    case ApiVersion.resolve(client, fn -> probe(client, call) end) do
+  @spec api(Client.t(), atom(), Deadline.t() | nil) :: {:ok, module()} | {:error, Exception.t()}
+  def api(%Client{} = client, call \\ :other, deadline \\ nil) do
+    probe = fn -> probe(client, call, deadline) end
+
+    case ApiVersion.resolve(client, probe, share: deadline == nil) do
       {:ok, :v1} -> {:ok, V1}
       {:ok, :v2} -> {:ok, V2}
       {:error, reason} -> {:error, reason}
@@ -40,10 +43,11 @@ defmodule EventSourcingDB.Transport do
   # EventSourcingDB, such as from a proxy that forwards only the v1 API, since
   # every request of the v1 API checks that its answer does. Every other answer
   # must come from EventSourcingDB.
-  defp probe(client, call) do
+  defp probe(client, call, deadline) do
     options = if call == :ping, do: [], else: [retry: false]
+    options = [authorize: false, deadline: deadline] ++ options
 
-    case HTTP.unchecked_one_shot(client, :get, @probe_path, nil, [authorize: false] ++ options) do
+    case HTTP.unchecked_one_shot(client, :get, @probe_path, nil, options) do
       {:ok, %Req.Response{status: status}} when status in [404, 405] ->
         {:ok, :v1}
 

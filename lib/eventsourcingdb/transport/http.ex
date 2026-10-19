@@ -4,11 +4,19 @@ defmodule EventSourcingDB.Transport.HTTP do
   # The HTTP machinery that every API shares: building a request, sending a
   # request with a single answer, and opening and reading a stream of NDJSON
   # lines, each bounded by the stall timeout of the client.
+  #
+  # A call that was given a timeout passes its deadline as the option
+  # :deadline, which bounds the request with a single answer as a whole, and
+  # the stream from opening it to reading its last line. Once the deadline
+  # passed, the request is aborted, and the call fails with an
+  # EventSourcingDB.Errors.CallTimedOut, while the stall timeout keeps
+  # bounding each wait for data with an error of its own.
 
   alias EventSourcingDB.Client
-  alias EventSourcingDB.Transport.RequestPhase
+  alias EventSourcingDB.Transport.{Deadline, RequestPhase}
 
   alias EventSourcingDB.Errors.{
+    CallTimedOut,
     ConnectionStalled,
     DbApiError,
     InvalidResponseType,
@@ -42,7 +50,8 @@ defmodule EventSourcingDB.Transport.HTTP do
   #
   # With the option track_sending: true, a request that failed before it was
   # sent fails with {:not_sent, reason}, so that a write can tell that it was
-  # not stored (see EventSourcingDB.Transport.RequestPhase).
+  # not stored (see EventSourcingDB.Transport.RequestPhase). So does a request
+  # that timed out before it had a connection.
   #
   # With the option answered, a function, the function is given the answer
   # before it is checked to come from EventSourcingDB, as for stream/5.
@@ -67,15 +76,58 @@ defmodule EventSourcingDB.Transport.HTTP do
           {:ok, Req.Response.t()} | {:error, Exception.t()}
   def unchecked_one_shot(client, method, path, body, options \\ []) do
     {track_sending?, options} = Keyword.pop(options, :track_sending, false)
+    {deadline, options} = Keyword.pop(options, :deadline)
     req = build_request(client, method, path, body, options)
     timeout = receive_timeout(client, req)
 
-    case RequestPhase.track(fn ->
-           Req.request(req, receive_timeout: timeout, decode_body: false)
-         end) do
+    case request_one_shot(req, timeout, deadline) do
       {{:ok, response}, _phase} -> {:ok, response}
       {{:error, reason}, phase} -> failure(reason, timeout, phase, track_sending?)
+      {:timed_out, connected?} -> timed_out(deadline, connected?, track_sending?)
     end
+  end
+
+  # Without a deadline, the request runs in the calling process. With one, it
+  # runs through the relay, as a stream does (see request_through_relay/3),
+  # so that the caller can abort it at the deadline, which closes its
+  # connection, or resets its stream in an HTTP/2 pool. Finch then bounds the
+  # waits for data with the receive timeout as it does in the calling
+  # process, also across the attempts of a retry, and the caller reads the
+  # body of the response, until the deadline.
+  defp request_one_shot(req, timeout, nil) do
+    RequestPhase.track(fn -> Req.request(req, receive_timeout: timeout, decode_body: false) end)
+  end
+
+  defp request_one_shot(req, timeout, deadline) do
+    case request_through_relay(req, deadline, receive_timeout: timeout) do
+      {{:ok, response}, phase} ->
+        case read_body(response, :infinity, deadline, "") do
+          {:ok, body} ->
+            {{:ok, %{response | body: body}}, phase}
+
+          {:error, %CallTimedOut{}} ->
+            close_stream(response)
+            {:timed_out, true}
+
+          {:error, reason} ->
+            close_stream(response)
+            {{:error, reason}, :maybe_sent}
+        end
+
+      result ->
+        result
+    end
+  end
+
+  # A call that timed out fails with an error of its own, which, should the
+  # caller ask for it, tells whether the request had no connection yet, in
+  # which case it was certainly not sent.
+  defp timed_out(deadline, connected?, track_sending?) do
+    error = Deadline.error(deadline)
+
+    if track_sending? and not connected?,
+      do: {:error, {:not_sent, error}},
+      else: {:error, error}
   end
 
   # A failure of the transport, which is a stall if it is a timeout, and,
@@ -117,20 +169,26 @@ defmodule EventSourcingDB.Transport.HTTP do
   #     checked to come from EventSourcingDB
   #   * :track_sending - whether a stream that fails to open before it was
   #     sent fails with {:not_sent, reason}, as for one_shot/5
+  #   * :deadline - the deadline of a call that was given a timeout, which
+  #     bounds the stream from opening it to reading its last line
   @spec stream(Client.t(), atom(), String.t(), term(), keyword()) ::
           {:ok, Enumerable.t()} | {:error, Exception.t()}
   def stream(client, method, path, body, options) do
     req = build_request(client, method, path, body, [])
     heartbeats? = Keyword.fetch!(options, :heartbeats?)
-    answered = Keyword.get(options, :answered, &ignore_answer/1)
-    status_error = Keyword.get(options, :status_error, &default_status_error/2)
 
     stall_timeout =
       if heartbeats?, do: heartbeat_timeout(client), else: receive_timeout(client, req)
 
-    track_sending? = Keyword.get(options, :track_sending, false)
+    opening = %{
+      heartbeats?: heartbeats?,
+      answered: Keyword.get(options, :answered, &ignore_answer/1),
+      status_error: Keyword.get(options, :status_error, &default_status_error/2),
+      track_sending?: Keyword.get(options, :track_sending, false),
+      deadline: Keyword.get(options, :deadline)
+    }
 
-    case open_stream(req, stall_timeout, heartbeats?, answered, status_error, track_sending?) do
+    case open_stream(req, stall_timeout, opening) do
       {:ok, response, wait} ->
         # The resource receives the lines of the response, and keeps the start
         # of a line that has not arrived completely yet next to the response.
@@ -144,6 +202,7 @@ defmodule EventSourcingDB.Transport.HTTP do
           stall_timeout: stall_timeout,
           decode: Keyword.fetch!(options, :decode),
           ending: Keyword.fetch!(options, :ending),
+          deadline: opening.deadline,
           status: :open
         }
 
@@ -162,22 +221,27 @@ defmodule EventSourcingDB.Transport.HTTP do
   # once nothing arrives for the stall timeout, so Finch must not end it first
   # with an error of its own, and it bounds each wait itself, in the relay, as
   # does every stream in a pool whose waits Finch does not bound one by one
-  # (see finch_bounds_each_wait?/1).
-  defp open_stream(req, stall_timeout, heartbeats?, answered, status_error, track_sending?) do
+  # (see finch_bounds_each_wait?/1). A stream of a call with a deadline takes
+  # the relay as well, so that the caller can abort it while it opens.
+  defp open_stream(req, stall_timeout, opening) do
     {response, wait} =
-      if not heartbeats? and finch_bounds_each_wait?(req) do
+      if opening.deadline == nil and not opening.heartbeats? and finch_bounds_each_wait?(req) do
         {{Req.request(req, into: :self, receive_timeout: stall_timeout), :maybe_sent}, :infinity}
       else
-        {request_through_relay(req, stall_timeout), stall_timeout}
+        {request_through_relay(req, opening.deadline, wait: relay_wait(stall_timeout)),
+         stall_timeout}
       end
 
     case response do
       {{:ok, response}, _phase} ->
-        answered.(response)
-        validate_stream_response(response, stall_timeout, wait, status_error)
+        opening.answered.(response)
+        validate_stream_response(response, stall_timeout, wait, opening)
 
       {{:error, reason}, phase} ->
-        failure(reason, stall_timeout, phase, track_sending?)
+        failure(reason, stall_timeout, phase, opening.track_sending?)
+
+      {:timed_out, connected?} ->
+        timed_out(opening.deadline, connected?, opening.track_sending?)
     end
     |> case do
       {:ok, response} -> {:ok, response, wait}
@@ -187,9 +251,9 @@ defmodule EventSourcingDB.Transport.HTTP do
 
   # A stream that fails to open closes its response right away, so that none
   # of its messages stay behind in the mailbox.
-  defp validate_stream_response(response, stall_timeout, wait, status_error) do
+  defp validate_stream_response(response, stall_timeout, wait, opening) do
     with :ok <- validate_server_header(response),
-         :ok <- validate_stream_status(response, stall_timeout, wait, status_error) do
+         :ok <- validate_stream_status(response, stall_timeout, wait, opening) do
       {:ok, response}
     else
       error ->
@@ -201,12 +265,12 @@ defmodule EventSourcingDB.Transport.HTTP do
   # For a status other than 200, the error carries the text that the server
   # sent, as for the requests with a single answer, so the body is read before
   # the response is closed.
-  defp validate_stream_status(%Req.Response{status: 200}, _stall_timeout, _wait, _status_error),
+  defp validate_stream_status(%Req.Response{status: 200}, _stall_timeout, _wait, _opening),
     do: :ok
 
-  defp validate_stream_status(response, stall_timeout, wait, status_error) do
-    case read_body(response, wait, "") do
-      {:ok, text} -> {:error, status_error.(response, text)}
+  defp validate_stream_status(response, stall_timeout, wait, opening) do
+    case read_body(response, wait, opening.deadline, "") do
+      {:ok, text} -> {:error, opening.status_error.(response, text)}
       {:error, reason} -> {:error, transport_error(reason, stall_timeout)}
     end
   end
@@ -214,15 +278,23 @@ defmodule EventSourcingDB.Transport.HTTP do
   defp default_status_error(response, text), do: DbApiError.from_response(response, text)
 
   # Reads the rest of the body, and waits for each block of it at most for the
-  # timeout, unless Finch bounds the wait.
-  defp read_body(response, wait, body) do
-    case receive_message(response, deadline(wait)) do
-      {:ok, [data: data]} -> read_body(response, wait, body <> data)
+  # timeout, unless Finch bounds the wait, and until the deadline of the call.
+  defp read_body(response, wait, call_deadline, body) do
+    case receive_message(response, Deadline.earliest(deadline(wait), call_deadline)) do
+      {:ok, [data: data]} -> read_body(response, wait, call_deadline, body <> data)
       {:ok, [:done]} -> {:ok, body}
-      {:ok, _other} -> read_body(response, wait, body)
+      {:ok, _other} -> read_body(response, wait, call_deadline, body)
       {:error, reason} -> {:error, reason}
-      :timeout -> {:error, %Req.TransportError{reason: :timeout}}
+      :timeout -> {:error, timeout_reason(call_deadline)}
     end
+  end
+
+  # A wait that ended at the deadline of the call ends the call, and every
+  # other one is a stall.
+  defp timeout_reason(call_deadline) do
+    if Deadline.passed?(call_deadline),
+      do: Deadline.error(call_deadline),
+      else: %Req.TransportError{reason: :timeout}
   end
 
   # Every block of the response restarts the timeout, since anything that
@@ -237,11 +309,16 @@ defmodule EventSourcingDB.Transport.HTTP do
   # which cancels the response and thereby closes the connection. An error
   # that a line reports is raised once the items of the lines before it have
   # been delivered.
+  #
+  # The deadline of a call ends the stream as a stall does, also while the
+  # lines arrive faster than the stream is read.
   defp receive_items(%{status: :ended} = state), do: {:halt, state}
   defp receive_items(%{status: {:failed, reason}}), do: raise(reason)
 
   defp receive_items(state) do
-    case receive_message(state.response, deadline(state.wait)) do
+    if Deadline.passed?(state.deadline), do: raise(Deadline.error(state.deadline))
+
+    case receive_message(state.response, Deadline.earliest(deadline(state.wait), state.deadline)) do
       {:ok, [data: data]} ->
         case split_lines(state.rest, data) do
           {[], rest} -> receive_items(%{state | rest: rest})
@@ -264,7 +341,7 @@ defmodule EventSourcingDB.Transport.HTTP do
         raise(transport_error(reason, state.stall_timeout))
 
       :timeout ->
-        raise(ConnectionStalled.new(state.stall_timeout))
+        raise(transport_error(timeout_reason(state.deadline), state.stall_timeout))
     end
   end
 
@@ -354,9 +431,12 @@ defmodule EventSourcingDB.Transport.HTTP do
   end
 
   # A transport error that is a timeout is a stall, since every timeout is
-  # the stall timeout of the request.
+  # the stall timeout of the request, while the deadline of a call ends it
+  # with an error of its own.
   @doc false
   @spec transport_error(Exception.t(), timeout()) :: Exception.t()
+  def transport_error(%CallTimedOut{} = error, _timeout), do: error
+
   def transport_error(%{__exception__: true, reason: :timeout}, timeout) do
     ConnectionStalled.new(timeout)
   end
@@ -433,14 +513,22 @@ defmodule EventSourcingDB.Transport.HTTP do
   # messages of the response to the caller, while the caller bounds the wait.
   # A pool that the client brings by name takes this path as well, even one
   # that speaks HTTP/1, where Finch then waits for data without a bound, too.
+  # So do the requests of a call with a deadline, so that the caller can stop
+  # the relay once the deadline passed, where a request with a single answer
+  # leaves the waits for data to Finch, as it does in the calling process.
   #
   # The relay is linked to the caller while it waits for the response headers,
   # and monitors it afterwards, so it does not outlive the caller. Finch in turn
   # cancels the request once the relay is down.
-  defp request_through_relay(req, timeout) do
+  #
+  # The caller waits for the response headers at most for the given wait, and
+  # until the deadline of the call, while Finch waits for each block of data
+  # at most for the given receive timeout, which is :infinity for a stream.
+  defp request_through_relay(req, deadline, options) do
     caller = self()
     context = process_context()
-    relay = spawn_link(fn -> run_relay(caller, context, req) end)
+    receive_timeout = Keyword.get(options, :receive_timeout, :infinity)
+    relay = spawn_link(fn -> run_relay(caller, context, req, receive_timeout) end)
     monitor = Process.monitor(relay)
 
     receive do
@@ -451,13 +539,22 @@ defmodule EventSourcingDB.Transport.HTTP do
       {:DOWN, ^monitor, :process, ^relay, reason} ->
         exit(reason)
     after
-      relay_wait(timeout) ->
+      min(Keyword.get(options, :wait, :infinity), Deadline.remaining(deadline)) ->
+        timed_out? = Deadline.passed?(deadline)
+        connected? = timed_out? and connected?(relay, req)
         Process.unlink(relay)
         stop_relay(relay, monitor)
         discard_relay_result(relay)
-        {{:error, %Req.TransportError{reason: :timeout}}, :maybe_sent}
+
+        if timed_out?,
+          do: {:timed_out, connected?},
+          else: {{:error, %Req.TransportError{reason: :timeout}}, :maybe_sent}
     end
   end
+
+  # Finch reports the steps of the request from a process that it starts as a
+  # child of the relay, which it does in an HTTP/1 pool.
+  defp connected?(relay, req), do: RequestPhase.connected?(relay, finch_bounds_each_wait?(req))
 
   # Connecting counts toward the stall timeout, so a connection that the
   # server does not accept times out at the same moment as the wait for the
@@ -498,14 +595,14 @@ defmodule EventSourcingDB.Transport.HTTP do
   # The relay tells the caller whether the request was sent at all, as Finch
   # reports it from the process that it starts for the request, whose parent
   # is the relay (see EventSourcingDB.Transport.RequestPhase).
-  defp run_relay(caller, context, req) do
+  defp run_relay(caller, context, req, receive_timeout) do
     take_over_process_context(context)
     monitor = Process.monitor(caller)
 
     {result, phase} =
       RequestPhase.track_child(fn ->
         try do
-          Req.request(req, into: :self, receive_timeout: :infinity)
+          Req.request(req, into: :self, receive_timeout: receive_timeout)
         rescue
           # Finch raises rather than returns that an HTTP/2 pool has no
           # connection for a stream, which Req returns as an error for a
