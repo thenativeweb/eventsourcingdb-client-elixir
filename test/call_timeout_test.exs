@@ -138,6 +138,50 @@ defmodule EventSourcingDBTest.CallTimeout do
         assert_receive {:stream_server, :closed}, 1_000
       end
 
+      test "fails to ping once the timeout ran out while the body of the answer stalls" do
+        client =
+          start_server(
+            fn connection -> StreamServer.send_head(connection, 200, @json_headers) end,
+            protocol: @protocol
+          )
+
+        {result, elapsed} =
+          StreamServer.run_with_guard(fn ->
+            {EventSourcingDB.ping(client, timeout: @timeout), mailbox()}
+          end)
+
+        assert {:ok, {{:error, %CallTimedOut{}}, []}} = result
+        assert elapsed >= @timeout
+        assert elapsed < @timeout + 300
+        assert_receive {:stream_server, :closed}, 1_000
+      end
+
+      test "fails to open a stream once the timeout ran out while the body of an error answer stalls" do
+        client =
+          start_server(
+            fn connection -> StreamServer.send_head(connection, 500, @json_headers) end,
+            protocol: @protocol
+          )
+
+        {result, elapsed} =
+          StreamServer.run_with_guard(fn ->
+            subjects =
+              EventSourcingDB.read_subjects(
+                client,
+                "/",
+                %ReadSubjectsOptions{recursive: true},
+                timeout: @timeout
+              )
+
+            {subjects, mailbox()}
+          end)
+
+        assert {:ok, {{:error, %CallTimedOut{}}, []}} = result
+        assert elapsed >= @timeout
+        assert elapsed < @timeout + 300
+        assert_receive {:stream_server, :closed}, 1_000
+      end
+
       test "ends a stream without heartbeats once the timeout ran out, after the items that arrived" do
         client =
           start_server(
@@ -271,6 +315,23 @@ defmodule EventSourcingDBTest.CallTimeout do
                    timeout: @timeout
                  )
       end
+    end
+  end
+
+  # Over HTTP/2, there is no evidence of a connection, so a write that times
+  # out always counts as one that may have been stored.
+  for api <- [:v1, :v2] do
+    test "fails to write events over HTTP/2 through the #{api} API with an unknown outcome" do
+      client = start_server(fn _connection -> :ok end, api: unquote(api), protocol: :http2)
+
+      {result, elapsed} =
+        StreamServer.run_with_guard(fn ->
+          {EventSourcingDB.write_events(client, [candidate()], timeout: @timeout), mailbox()}
+        end)
+
+      assert {:ok, {{:error, %OutcomeUnknown{cause: %CallTimedOut{}}}, []}} = result
+      assert elapsed >= @timeout
+      assert elapsed < @timeout + 300
     end
   end
 
