@@ -43,14 +43,22 @@ defmodule EventSourcingDB.Transport.HTTP do
   # With the option track_sending: true, a request that failed before it was
   # sent fails with {:not_sent, reason}, so that a write can tell that it was
   # not stored (see EventSourcingDB.Transport.RequestPhase).
+  #
+  # With the option answered, a function, the function is given the answer
+  # before it is checked to come from EventSourcingDB, as for stream/5.
   @spec one_shot(Client.t(), atom(), String.t(), term(), keyword()) ::
           {:ok, Req.Response.t()} | {:error, Exception.t()}
   def one_shot(client, method, path, body, options \\ []) do
+    {answered, options} = Keyword.pop(options, :answered, &ignore_answer/1)
+
     with {:ok, response} <- unchecked_one_shot(client, method, path, body, options),
+         answered.(response),
          :ok <- validate_server_header(response) do
       {:ok, response}
     end
   end
+
+  defp ignore_answer(_response), do: :ok
 
   # Sends a request with a single answer as one_shot/5 does, but returns the
   # answer whether it comes from EventSourcingDB or not, for the caller to
@@ -105,6 +113,8 @@ defmodule EventSourcingDB.Transport.HTTP do
   #     for observing events, so that the end of the response is a failure
   #   * :status_error - turns an answer with another status than 200, given as
   #     the response and the text of its body, into an error
+  #   * :answered - is given the answer, whatever its status, before it is
+  #     checked to come from EventSourcingDB
   #   * :track_sending - whether a stream that fails to open before it was
   #     sent fails with {:not_sent, reason}, as for one_shot/5
   @spec stream(Client.t(), atom(), String.t(), term(), keyword()) ::
@@ -112,6 +122,7 @@ defmodule EventSourcingDB.Transport.HTTP do
   def stream(client, method, path, body, options) do
     req = build_request(client, method, path, body, [])
     heartbeats? = Keyword.fetch!(options, :heartbeats?)
+    answered = Keyword.get(options, :answered, &ignore_answer/1)
     status_error = Keyword.get(options, :status_error, &default_status_error/2)
 
     stall_timeout =
@@ -119,7 +130,7 @@ defmodule EventSourcingDB.Transport.HTTP do
 
     track_sending? = Keyword.get(options, :track_sending, false)
 
-    case open_stream(req, stall_timeout, heartbeats?, status_error, track_sending?) do
+    case open_stream(req, stall_timeout, heartbeats?, answered, status_error, track_sending?) do
       {:ok, response, wait} ->
         # The resource receives the lines of the response, and keeps the start
         # of a line that has not arrived completely yet next to the response.
@@ -152,7 +163,7 @@ defmodule EventSourcingDB.Transport.HTTP do
   # with an error of its own, and it bounds each wait itself, in the relay, as
   # does every stream in a pool whose waits Finch does not bound one by one
   # (see finch_bounds_each_wait?/1).
-  defp open_stream(req, stall_timeout, heartbeats?, status_error, track_sending?) do
+  defp open_stream(req, stall_timeout, heartbeats?, answered, status_error, track_sending?) do
     {response, wait} =
       if not heartbeats? and finch_bounds_each_wait?(req) do
         {{Req.request(req, into: :self, receive_timeout: stall_timeout), :maybe_sent}, :infinity}
@@ -162,6 +173,7 @@ defmodule EventSourcingDB.Transport.HTTP do
 
     case response do
       {{:ok, response}, _phase} ->
+        answered.(response)
         validate_stream_response(response, stall_timeout, wait, status_error)
 
       {{:error, reason}, phase} ->

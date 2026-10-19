@@ -67,12 +67,12 @@ defmodule EventSourcingDB.Transport.V2 do
   # A single answer is an envelope, which may hold an error that the server
   # reports at status 200, while another status carries the text of an error.
   defp request(client, method, path, body, options \\ []) do
-    case HTTP.one_shot(client, method, path, body, options) do
+    case HTTP.one_shot(client, method, path, body, [answered: forget_if_gone(client)] ++ options) do
       {:ok, %Req.Response{status: 200, body: text}} ->
         envelope(text)
 
       {:ok, %Req.Response{body: text} = response} ->
-        {:error, status_error(client, response, text)}
+        {:error, DbApiError.from_response(response, text)}
 
       {:error, reason} ->
         {:error, reason}
@@ -81,10 +81,16 @@ defmodule EventSourcingDB.Transport.V2 do
 
   # A server that answers a route of the v2 API with 404 or 405 no longer
   # offers it, for example because it was rolled back to a version without
-  # it, so the API is forgotten, and the next request asks again.
-  defp status_error(client, %Req.Response{status: status} = response, text) do
-    if status in [404, 405], do: ApiVersion.forget(client)
-    DbApiError.from_response(response, text)
+  # it, so the API is forgotten, and the next request asks again. As for the
+  # probe, this holds for an answer that does not come from EventSourcingDB
+  # as well, such as one from a proxy that forwards only the v1 API, since
+  # the probe then decides. So the status counts before the Server header is
+  # checked, and the request fails with its own error all the same.
+  defp forget_if_gone(client) do
+    fn %Req.Response{status: status} ->
+      if status in [404, 405], do: ApiVersion.forget(client)
+      :ok
+    end
   end
 
   defp envelope(text) do
@@ -110,7 +116,7 @@ defmodule EventSourcingDB.Transport.V2 do
       heartbeats?: true,
       ending: :end_item,
       track_sending: true,
-      status_error: &status_error(client, &1, &2)
+      answered: forget_if_gone(client)
     )
     |> collect()
     |> WriteOutcome.classify(:v2)
@@ -136,7 +142,7 @@ defmodule EventSourcingDB.Transport.V2 do
       heartbeats?: true,
       ending: :end_item,
       track_sending: true,
-      status_error: &status_error(client, &1, &2)
+      answered: forget_if_gone(client)
     )
     |> collect()
     |> then(fn
@@ -213,7 +219,7 @@ defmodule EventSourcingDB.Transport.V2 do
 
   defp stream(client, path, body, options) do
     HTTP.stream(client, :query, path, body,
-      status_error: &status_error(client, &1, &2),
+      answered: forget_if_gone(client),
       decode: decoder(Keyword.fetch!(options, :type), Keyword.fetch!(options, :process)),
       heartbeats?: true,
       ending: Keyword.get(options, :ending, :end_item)

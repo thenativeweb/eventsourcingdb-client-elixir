@@ -1,11 +1,12 @@
 defmodule EventSourcingDBTest.ApiVersion do
-  alias EventSourcingDB.{Client, ReadSubjectsOptions}
+  alias EventSourcingDB.{Client, ManagementEvent, ReadSubjectsOptions}
 
   alias EventSourcingDB.Errors.{
     ConnectionStalled,
     DbApiError,
     InvalidResponseType,
     InvalidServerHeader,
+    OutcomeUnknown,
     TransmissionError
   }
 
@@ -211,6 +212,36 @@ defmodule EventSourcingDBTest.ApiVersion do
 
         assert {:error, error} = run(@call, client)
         assert %DbApiError{status: 404} = unwrap_outcome(error)
+        assert :ok = succeed(@call, client)
+
+        assert Enum.count(received_requests(), &(&1 == {"GET", "/api/v2/system/ping"})) == 2
+      end
+    end
+
+    # A proxy in front of the server that forwards only the v1 API answers the
+    # routes of the v2 API itself, as it answers the probe.
+    for call <- [:verify_api_token, :read_event_types, :write_events, :register_event_schema],
+        status <- [404, 405] do
+      @call call
+      @status status
+
+      test "fails #{call} once as before if a proxy answers the v2 route with #{status}, and is asked for its API again on the next request" do
+        api = start_supervised!({Agent, fn -> :v2 end}, id: make_ref())
+
+        url =
+          FakeServer.start(fn request ->
+            case Agent.get(api, & &1) do
+              :v2 -> v2_server(request)
+              :v1 -> proxied_v1_server(request, @status)
+            end
+          end)
+
+        client = client(url)
+        assert :ok = succeed(@call, client)
+
+        Agent.update(api, fn _api -> :v1 end)
+
+        assert run(@call, client) == {:error, header_error(@call)}
         assert :ok = succeed(@call, client)
 
         assert Enum.count(received_requests(), &(&1 == {"GET", "/api/v2/system/ping"})) == 2
@@ -439,13 +470,21 @@ defmodule EventSourcingDBTest.ApiVersion do
   defp succeed(call, client) do
     case run(call, client) do
       :ok -> :ok
+      {:ok, %ManagementEvent{}} -> :ok
       {:ok, items} -> if is_list(Enum.to_list(items)), do: :ok
       error -> error
     end
   end
 
-  defp unwrap_outcome(%EventSourcingDB.Errors.OutcomeUnknown{cause: cause}), do: cause
+  defp unwrap_outcome(%OutcomeUnknown{cause: cause}), do: cause
   defp unwrap_outcome(error), do: error
+
+  # An answer that does not come from EventSourcingDB fails the call, and
+  # leaves the outcome of a write open.
+  defp header_error(call) when call in [:write_events, :register_event_schema],
+    do: %OutcomeUnknown{cause: %InvalidServerHeader{}}
+
+  defp header_error(_call), do: %InvalidServerHeader{}
 
   defp server(:v2, request), do: v2_server(request)
   defp server(:v1, request), do: v1_server(request, 404)
@@ -468,6 +507,14 @@ defmodule EventSourcingDBTest.ApiVersion do
     {:lines,
      [
        %{"type" => "event", "data" => Jason.decode!(written_event())},
+       %{"type" => "end", "data" => %{}}
+     ]}
+  end
+
+  defp v2_server(%{path: "/api/v2/data/register-event-schema"}) do
+    {:lines,
+     [
+       %{"type" => "event", "data" => schema_registered("/api/v2/data/register-event-schema")},
        %{"type" => "end", "data" => %{}}
      ]}
   end
@@ -499,8 +546,34 @@ defmodule EventSourcingDBTest.ApiVersion do
      String.replace(@v1_ping, "ping-received", "api-token-verified")}
   end
 
+  defp v1_server(%{path: "/api/v1/register-event-schema"}, _answers) do
+    {200, [{"content-type", "application/json"}],
+     Jason.encode!(schema_registered("/api/v1/register-event-schema"))}
+  end
+
   # A server without the v2 API answers its routes with 404.
   defp v1_server(%{path: "/api/v2/" <> _route}, _answers), do: {404, "404 page not found\n"}
+
+  # Answers every route of the v2 API with the given status, as a proxy that
+  # forwards only the v1 API to a server without the v2 API does, and every
+  # other request as that server does.
+  defp proxied_v1_server(%{path: "/api/v2/" <> _route}, status),
+    do: {status, [{"server", "nginx"}], "not found\n"}
+
+  defp proxied_v1_server(request, _status), do: v1_server(request, 404)
+
+  defp schema_registered(subject) do
+    %{
+      "specversion" => "1.0",
+      "id" => "0",
+      "source" => "https://www.eventsourcingdb.io",
+      "subject" => subject,
+      "type" => "io.eventsourcingdb.api.event-schema-registered",
+      "time" => "2026-10-18T12:00:00.000000000Z",
+      "datacontenttype" => "application/json",
+      "data" => %{"type" => "io.eventsourcingdb.test", "schema" => %{"type" => "object"}}
+    }
+  end
 
   defp written_event() do
     Jason.encode!(%{
