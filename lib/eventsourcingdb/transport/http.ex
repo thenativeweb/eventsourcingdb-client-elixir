@@ -571,15 +571,21 @@ defmodule EventSourcingDB.Transport.HTTP do
   # Builds the request from the options of the client, which come after those
   # of the client SDK, so that they take precedence, and the given options,
   # which come last, since the request needs them.
+  #
+  # With the option authorize: false, the request carries no API token, which
+  # the client SDK sends only where it is needed: with every request but the
+  # pings, which EventSourcingDB answers without one.
   @spec build_request(Client.t(), atom(), String.t(), term(), keyword()) :: Req.Request.t()
   def build_request(client, method, path, body, options) do
+    {authorize?, options} = Keyword.pop(options, :authorize, true)
+
     [
       base_url: client.base_url,
-      auth: {:bearer, client.api_token},
       method: method,
       url: path,
       retry: &retry?/2
     ]
+    |> Keyword.merge(auth_options(client, authorize?))
     |> Keyword.merge(body_options(body))
     |> Keyword.merge(client.req_options)
     |> Keyword.merge(options)
@@ -606,6 +612,9 @@ defmodule EventSourcingDB.Transport.HTTP do
     do: reason in [:unprocessed, :pool_not_available]
 
   defp transient?(_exception), do: false
+
+  defp auth_options(client, true), do: [auth: {:bearer, client.api_token}]
+  defp auth_options(_client, false), do: []
 
   # A request without a body sends none, which a GET request must not carry
   # anyway, since Req would otherwise send it as a POST request.

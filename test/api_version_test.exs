@@ -1,5 +1,5 @@
 defmodule EventSourcingDBTest.ApiVersion do
-  alias EventSourcingDB.Client
+  alias EventSourcingDB.{Client, ReadSubjectsOptions}
 
   alias EventSourcingDB.Errors.{
     ConnectionStalled,
@@ -290,6 +290,66 @@ defmodule EventSourcingDBTest.ApiVersion do
     end
   end
 
+  # Every call of the client SDK but the ping.
+  @other_calls [
+    :verify_api_token,
+    :write_events,
+    :read_events,
+    :observe_events,
+    :run_eventql_query,
+    :register_event_schema,
+    :read_subjects,
+    :read_event_type,
+    :read_event_types
+  ]
+
+  # The client SDK sends the API token only where it is needed, so neither
+  # with the probe nor with the ping, which EventSourcingDB answers without
+  # one.
+  describe "the API token" do
+    test "is sent neither with the probe nor with the ping of a server with the v2 API" do
+      url = FakeServer.start(&v2_server/1)
+
+      assert EventSourcingDB.ping(client(url)) == :ok
+
+      assert received_authorizations() == [
+               {"GET", "/api/v2/system/ping", nil},
+               {"GET", "/api/v2/system/ping", nil}
+             ]
+    end
+
+    test "is sent neither with the probe nor with the ping of a server without the v2 API" do
+      url = FakeServer.start(&v1_server(&1, 404))
+
+      assert EventSourcingDB.ping(client(url)) == :ok
+
+      assert received_authorizations() == [
+               {"GET", "/api/v2/system/ping", nil},
+               {"GET", "/api/v1/ping", nil}
+             ]
+    end
+
+    for api <- [:v2, :v1] do
+      @api api
+
+      test "is sent with every other call over the #{api} API" do
+        # Only the requests matter, so every call but the probe is refused.
+        url =
+          FakeServer.start(fn
+            %{path: "/api/v2/system/ping"} = request -> server(@api, request)
+            _request -> {400, "bad request\n"}
+          end)
+
+        client = client(url)
+        for call <- @other_calls, do: assert({:error, _reason} = run(call, client))
+
+        assert [{"GET", "/api/v2/system/ping", nil} | requests] = received_authorizations()
+        assert length(requests) == length(@other_calls)
+        assert Enum.reject(requests, &match?({_method, _path, "Bearer secret"}, &1)) == []
+      end
+    end
+  end
+
   describe "concurrent first requests" do
     test "share a single probe and its result" do
       test_process = self()
@@ -359,6 +419,21 @@ defmodule EventSourcingDBTest.ApiVersion do
   defp run(:verify_api_token, client), do: EventSourcingDB.verify_api_token(client)
   defp run(:read_event_types, client), do: EventSourcingDB.read_event_types(client)
   defp run(:write_events, client), do: EventSourcingDB.write_events(client, [candidate()])
+  defp run(:read_events, client), do: EventSourcingDB.read_events(client, "/test")
+  defp run(:observe_events, client), do: EventSourcingDB.observe_events(client, "/test")
+
+  defp run(:run_eventql_query, client),
+    do: EventSourcingDB.run_eventql_query(client, "FROM e IN events PROJECT INTO e")
+
+  defp run(:register_event_schema, client) do
+    EventSourcingDB.register_event_schema(client, "io.eventsourcingdb.test", %{"type" => "object"})
+  end
+
+  defp run(:read_subjects, client),
+    do: EventSourcingDB.read_subjects(client, "/", %ReadSubjectsOptions{recursive: true})
+
+  defp run(:read_event_type, client),
+    do: EventSourcingDB.read_event_type(client, "io.eventsourcingdb.test")
 
   # Runs the call, and reads a stream that it returns to its end.
   defp succeed(call, client) do
@@ -371,6 +446,9 @@ defmodule EventSourcingDBTest.ApiVersion do
 
   defp unwrap_outcome(%EventSourcingDB.Errors.OutcomeUnknown{cause: cause}), do: cause
   defp unwrap_outcome(error), do: error
+
+  defp server(:v2, request), do: v2_server(request)
+  defp server(:v1, request), do: v1_server(request, 404)
 
   # Answers the v2 ping as EventSourcingDB 1.3 does, and every other request
   # successfully.
@@ -480,6 +558,17 @@ defmodule EventSourcingDBTest.ApiVersion do
     receive do
       {:fake_server, :request, %{method: method, path: path}} ->
         received_requests([{method, path} | requests])
+    after
+      0 -> Enum.reverse(requests)
+    end
+  end
+
+  # The method and the path of every request, together with its Authorization
+  # header, or nil without one.
+  defp received_authorizations(requests \\ []) do
+    receive do
+      {:fake_server, :request, %{method: method, path: path, headers: headers}} ->
+        received_authorizations([{method, path, headers["authorization"]} | requests])
     after
       0 -> Enum.reverse(requests)
     end

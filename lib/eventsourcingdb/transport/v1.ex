@@ -21,9 +21,10 @@ defmodule EventSourcingDB.Transport.V1 do
   # region Requests with a single answer
   #
 
+  # A ping carries no API token, since EventSourcingDB answers it without one.
   @impl true
   def ping(client) do
-    with {:ok, body} <- request(client, :ping, :get, "/api/v1/ping", nil) do
+    with {:ok, body} <- request(client, :ping, :get, "/api/v1/ping", nil, authorize: false) do
       case body do
         %{"type" => "io.eventsourcingdb.api.ping-received"} -> :ok
         _other -> {:error, %PingFailed{}}
