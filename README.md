@@ -542,9 +542,12 @@ defmodule YourTest do
   alias EventSourcingDB.TestContainer
   use ExUnit.Case
 
-  import Testcontainers.ExUnit
+  setup do
+    {:ok, esdb} = TestContainer.start(TestContainer.new())
+    on_exit(fn -> TestContainer.stop(esdb) end)
 
-  container(:esdb, TestContainer.new())
+    %{esdb: esdb}
+  end
 
   test "ping", %{esdb: esdb} do
     client = TestContainer.get_client(esdb)
@@ -559,32 +562,23 @@ end
 By default, `TestContainer` uses the `latest` tag of the official EventSourcingDB Docker image. To change that, call the `with_image_tag` function:
 
 ```elixir
-container(
-  :esdb,
-  TestContainer.new()
-  |> TestContainer.with_image_tag("1.0.0")
-)
+TestContainer.new()
+|> TestContainer.with_image_tag("1.0.0")
 ```
 
 Similarly, you can configure the port to use and the API token. Call the `with_port` or the `with_api_token` function respectively:
 
 ```elixir
-container(
-  :esdb,
-  TestContainer.new()
-  |> TestContainer.with_port(4000)
-  |> TestContainer.with_api_token("secret")
-)
+TestContainer.new()
+|> TestContainer.with_port(4000)
+|> TestContainer.with_api_token("secret")
 ```
 
 If you want to sign events, call the `with_signing_key` function. This generates a new signing and verification key pair inside the container:
 
 ```elixir
-container(
-  :esdb,
-  TestContainer.new()
-  |> TestContainer.with_signing_key()
-)
+TestContainer.new()
+|> TestContainer.with_signing_key()
 ```
 
 You can retrieve the private key (for signing) and the public key (for verifying signatures) once the container has been started:
@@ -595,6 +589,15 @@ verification_key = TestContainer.get_verification_key(esdb)
 ```
 
 The `signing_key` is the private key EventSourcingDB signs events with. The `verification_key` can be passed to `Event.verify_signature` when verifying events read from the database.
+
+The `start` function pulls the image if it is missing, and then waits until the database in the container answers a ping, for 30 seconds at most, not counting the pull. To change this time, call the `with_startup_timeout` function with the milliseconds:
+
+```elixir
+TestContainer.new()
+|> TestContainer.with_startup_timeout(60_000)
+```
+
+If a container keeps running, but does not become reachable in time, `start` replaces it with a new one, up to three containers in total, and then returns an `EventSourcingDB.Errors.ContainerStartFailed`. If Docker fails, or if the container exits, `start` returns that error at once, which, if the container exited, contains the last 20 lines of its log. In any case, `start` removes every container that it failed to start.
 
 ### Configuring the Client Manually
 

@@ -4,9 +4,7 @@ defmodule EventSourcingDBTest.ReadSubjects do
   import EventSourcingDBTest.Utils
   use ExUnit.Case, async: true
 
-  import Testcontainers.ExUnit
-
-  container(:esdb, test_container())
+  setup do: start_container()
 
   @recursive %ReadSubjectsOptions{recursive: true}
   @not_recursive %ReadSubjectsOptions{recursive: false}

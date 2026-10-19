@@ -5,6 +5,7 @@ defmodule EventSourcingDBTest.Utils do
   alias EventSourcingDB.EventCandidate
   alias EventSourcingDB.TestContainer
   import ExUnit.Assertions
+  import ExUnit.Callbacks
 
   # The tests run against the image tag that EVENTSOURCINGDB_IMAGE_TAG names,
   # such as latest or preview, and against the default tag of the test
@@ -15,6 +16,16 @@ defmodule EventSourcingDBTest.Utils do
       "" -> TestContainer.new()
       image_tag -> TestContainer.with_image_tag(TestContainer.new(), image_tag)
     end
+  end
+
+  # Starts a test container, and stops it once the tests are done, for setup
+  # and setup_all to hand it to the tests as esdb.
+  @spec start_container(TestContainer.t()) :: %{esdb: Testcontainers.Container.t()}
+  def start_container(config \\ test_container()) do
+    {:ok, esdb} = TestContainer.start(config)
+    on_exit(fn -> TestContainer.stop(esdb) end)
+
+    %{esdb: esdb}
   end
 
   # The API that the server in the container offers, which the test finds out

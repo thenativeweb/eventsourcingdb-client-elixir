@@ -7,16 +7,10 @@ defmodule EventSourcingDBTest.VerifyEventsSignature do
   import EventSourcingDBTest.Utils
   use ExUnit.Case
 
-  import Testcontainers.ExUnit
-
-  container(
-    :esdb,
-    test_container()
-    |> TestContainer.with_signing_key()
-  )
+  setup do: start_container(TestContainer.with_signing_key(test_container()))
 
   test "verify signature with missing signature" do
-    assert {:ok, esdb} = Testcontainers.start_container(test_container())
+    assert {:ok, esdb} = TestContainer.start(test_container())
     client = TestContainer.get_client(esdb)
 
     {public_key, _private_key} = :crypto.generate_key(:eddsa, :ed25519)
@@ -28,7 +22,7 @@ defmodule EventSourcingDBTest.VerifyEventsSignature do
 
     assert match?({:error, %SignatureMissing{}}, Event.verify_signature(event, public_key))
 
-    assert :ok = Testcontainers.stop_container(esdb.container_id)
+    assert :ok = TestContainer.stop(esdb)
   end
 
   test "get signing key returns the key the verification key belongs to", %{esdb: esdb} do
@@ -39,13 +33,13 @@ defmodule EventSourcingDBTest.VerifyEventsSignature do
   end
 
   test "get signing key raises without a signing key" do
-    assert {:ok, esdb} = Testcontainers.start_container(test_container())
+    assert {:ok, esdb} = TestContainer.start(test_container())
 
     assert_raise ArgumentError, "the container was started without a signing key", fn ->
       TestContainer.get_signing_key(esdb)
     end
 
-    assert :ok = Testcontainers.stop_container(esdb.container_id)
+    assert :ok = TestContainer.stop(esdb)
   end
 
   test "verify signature with broken event hash", %{esdb: esdb} do

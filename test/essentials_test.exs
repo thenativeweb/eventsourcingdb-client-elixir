@@ -6,9 +6,8 @@ defmodule EventSourcingDBTest.Essentials do
   use ExUnit.Case, async: true
 
   import EventSourcingDBTest.Utils
-  import Testcontainers.ExUnit
 
-  container(:esdb, test_container(), shared: true)
+  setup_all do: start_container()
 
   test "ping", %{esdb: esdb} do
     assert EventSourcingDB.ping(TestContainer.get_client(esdb)) == :ok
