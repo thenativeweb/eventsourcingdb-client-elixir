@@ -13,6 +13,8 @@ defmodule EventSourcingDB.TestContainer do
 
     import EventSourcingDB.TestContainer.ExUnit
 
+    @moduletag timeout: 150_000
+
     container(:esdb, TestContainer.new())
 
     test "ping", %{esdb: esdb} do
@@ -22,6 +24,8 @@ defmodule EventSourcingDB.TestContainer do
     end
   end
   ```
+
+  Starting the container can take up to three times the startup timeout, and that time counts toward the timeout of a test, unless the tests share the container with `shared: true`.
 
   Alternatively, start and stop the container yourself, with the `start` and the `stop` function:
 
