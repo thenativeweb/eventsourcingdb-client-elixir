@@ -31,8 +31,9 @@ defmodule EventSourcingDB.Transport.V2 do
 
   # A ping carries no API token, since EventSourcingDB answers it without one.
   @impl true
-  def ping(client) do
-    with {:ok, envelope} <- request(client, :get, "/api/v2/system/ping", nil, authorize: false) do
+  def ping(client, deadline) do
+    with {:ok, envelope} <-
+           request(client, :get, "/api/v2/system/ping", nil, authorize: false, deadline: deadline) do
       case envelope do
         %{"type" => "event", "data" => %{"type" => "io.eventsourcingdb.api.ping-received"}} -> :ok
         _other -> {:error, %PingFailed{}}
@@ -41,8 +42,9 @@ defmodule EventSourcingDB.Transport.V2 do
   end
 
   @impl true
-  def verify_api_token(client) do
-    with {:ok, envelope} <- request(client, :post, "/api/v2/system/verify-token", nil) do
+  def verify_api_token(client, deadline) do
+    with {:ok, envelope} <-
+           request(client, :post, "/api/v2/system/verify-token", nil, deadline: deadline) do
       case envelope do
         %{"type" => "event", "data" => %{"type" => "io.eventsourcingdb.api.token-verified"}} ->
           :ok
@@ -54,9 +56,11 @@ defmodule EventSourcingDB.Transport.V2 do
   end
 
   @impl true
-  def read_event_type(client, event_type) do
+  def read_event_type(client, event_type, deadline) do
+    body = %{type: event_type}
+
     with {:ok, envelope} <-
-           request(client, :query, "/api/v2/data/read-event-type", %{type: event_type}) do
+           request(client, :query, "/api/v2/data/read-event-type", body, deadline: deadline) do
       case envelope do
         %{"type" => "eventType", "data" => data} -> {:ok, EventType.new(data)}
         %{"type" => type} -> {:error, %InvalidResponseType{expected: "eventType", actual: type}}
@@ -66,7 +70,7 @@ defmodule EventSourcingDB.Transport.V2 do
 
   # A single answer is an envelope, which may hold an error that the server
   # reports at status 200, while another status carries the text of an error.
-  defp request(client, method, path, body, options \\ []) do
+  defp request(client, method, path, body, options) do
     case HTTP.one_shot(client, method, path, body, [answered: forget_if_gone(client)] ++ options) do
       {:ok, %Req.Response{status: 200, body: text}} ->
         envelope(text)
@@ -107,7 +111,7 @@ defmodule EventSourcingDB.Transport.V2 do
   #
 
   @impl true
-  def write_events(client, events, preconditions) do
+  def write_events(client, events, preconditions, deadline) do
     body = %{events: Enum.map(events, &candidate/1), preconditions: preconditions}
 
     client
@@ -116,7 +120,8 @@ defmodule EventSourcingDB.Transport.V2 do
       heartbeats?: true,
       ending: :end_item,
       track_sending: true,
-      answered: forget_if_gone(client)
+      answered: forget_if_gone(client),
+      deadline: deadline
     )
     |> collect()
     |> WriteOutcome.classify(:v2)
@@ -132,7 +137,7 @@ defmodule EventSourcingDB.Transport.V2 do
   defp candidate(candidate), do: candidate
 
   @impl true
-  def register_event_schema(client, event_type, schema) do
+  def register_event_schema(client, event_type, schema, deadline) do
     client
     |> HTTP.stream(
       :post,
@@ -142,7 +147,8 @@ defmodule EventSourcingDB.Transport.V2 do
       heartbeats?: true,
       ending: :end_item,
       track_sending: true,
-      answered: forget_if_gone(client)
+      answered: forget_if_gone(client),
+      deadline: deadline
     )
     |> collect()
     |> then(fn
@@ -172,48 +178,53 @@ defmodule EventSourcingDB.Transport.V2 do
   #
 
   @impl true
-  def read_events(client, subject, options) do
+  def read_events(client, subject, options, deadline) do
     stream(client, "/api/v2/data/read-events", subject_body(subject, options),
       type: "event",
-      process: &event/2
+      process: &event/2,
+      deadline: deadline
     )
   end
 
   # Observing events never ends, so the server sends no end item.
   @impl true
-  def observe_events(client, subject, options) do
+  def observe_events(client, subject, options, deadline) do
     stream(client, "/api/v2/data/observe-events", subject_body(subject, options),
       type: "event",
       process: &event/2,
-      ending: :never
+      ending: :never,
+      deadline: deadline
     )
   end
 
   # Each row holds the value that the query projects.
   @impl true
-  def run_eventql_query(client, query) do
+  def run_eventql_query(client, query, deadline) do
     stream(client, "/api/v2/data/run-eventql-query", %{query: query},
       type: "row",
-      process: fn data, _line -> data["value"] end
+      process: fn data, _line -> data["value"] end,
+      deadline: deadline
     )
   end
 
   @impl true
-  def read_subjects(client, subject, recursive) do
+  def read_subjects(client, subject, recursive, deadline) do
     stream(
       client,
       "/api/v2/data/read-subjects",
       %{subject: subject, options: %{recursive: recursive}},
       type: "subject",
-      process: fn data, _line -> data["subject"] end
+      process: fn data, _line -> data["subject"] end,
+      deadline: deadline
     )
   end
 
   @impl true
-  def read_event_types(client) do
+  def read_event_types(client, deadline) do
     stream(client, "/api/v2/data/read-event-types", nil,
       type: "eventType",
-      process: fn data, _line -> EventType.new(data) end
+      process: fn data, _line -> EventType.new(data) end,
+      deadline: deadline
     )
   end
 
@@ -222,7 +233,8 @@ defmodule EventSourcingDB.Transport.V2 do
       answered: forget_if_gone(client),
       decode: decoder(Keyword.fetch!(options, :type), Keyword.fetch!(options, :process)),
       heartbeats?: true,
-      ending: Keyword.get(options, :ending, :end_item)
+      ending: Keyword.get(options, :ending, :end_item),
+      deadline: Keyword.fetch!(options, :deadline)
     )
   end
 

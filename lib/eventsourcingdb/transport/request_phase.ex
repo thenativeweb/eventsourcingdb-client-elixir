@@ -5,6 +5,11 @@ defmodule EventSourcingDB.Transport.RequestPhase do
   # events of Finch: a request whose connection failed, before Finch began to
   # send it, was certainly not sent. Everything else may have been sent.
   #
+  # It also tells whether a request that the caller aborted, as a call with a
+  # timeout does, had a connection by then. In an HTTP/1 pool, which reports
+  # every step of the request, a request that had not got its connection yet
+  # was certainly not sent.
+  #
   # The phase belongs to the request alone, and lives with the process that
   # asks for it, so that it goes away with that process, and no other request
   # can change it:
@@ -22,7 +27,12 @@ defmodule EventSourcingDB.Transport.RequestPhase do
 
   @key __MODULE__
   @handler "eventsourcingdb-request-phase"
-  @events [[:finch, :connect, :stop], [:finch, :send, :start]]
+  @events [
+    [:finch, :queue, :start],
+    [:finch, :connect, :stop],
+    [:finch, :reused_connection],
+    [:finch, :send, :start]
+  ]
 
   @spec attach() :: :ok
   def attach() do
@@ -60,6 +70,37 @@ defmodule EventSourcingDB.Transport.RequestPhase do
     end
   end
 
+  # Tells whether the request that runs in the given process, through track/1
+  # or through track_child/1, had a connection by now, for a request that the
+  # caller is about to abort. Only an HTTP/1 pool reports every step, as the
+  # caller tells, so a request in another pool counts as having one.
+  @spec connected?(pid(), boolean()) :: boolean()
+  def connected?(pid, reported?) do
+    phase =
+      case :erlang.process_info(pid, {:dictionary, @key}) do
+        {{:dictionary, @key}, {:own, phase}} -> phase
+        {{:dictionary, @key}, :child} -> pending_reports(pid)
+        _other -> :none
+      end
+
+    phase in [:connected, :sent] or (not reported? and phase == :none)
+  end
+
+  # The phases that the child of a process reported, which wait in the mailbox
+  # of that process until the request returns.
+  defp pending_reports(pid) do
+    case Process.info(pid, :messages) do
+      {:messages, messages} ->
+        Enum.reduce(messages, :none, fn
+          {@key, reported}, phase -> merge(phase, reported)
+          _message, phase -> phase
+        end)
+
+      nil ->
+        :none
+    end
+  end
+
   # The child sends its phases before it hands the answer of Finch on, so
   # they are in the mailbox once the request returns.
   defp collect(phase) do
@@ -74,19 +115,31 @@ defmodule EventSourcingDB.Transport.RequestPhase do
   defp verdict(_phase), do: :maybe_sent
 
   # Once the request was sent, by an attempt before a retry as well, it stays
-  # sent.
+  # sent, and once it had a connection, it stays connected.
   defp merge(:sent, _phase), do: :sent
   defp merge(_phase, :sent), do: :sent
+  defp merge(:connected, _phase), do: :connected
   defp merge(_phase, reported), do: reported
 
   #
   # region Telemetry
   #
 
-  # Telemetry detaches a handler that raises, so the handler never does.
+  # Telemetry detaches a handler that raises, so the handler never does. An
+  # HTTP/1 pool queues every request for a connection, which it then either
+  # reuses or connects anew.
   @doc false
+  def handle_event([:finch, :queue, :start], _measurements, _metadata, _config),
+    do: mark(:queued)
+
   def handle_event([:finch, :connect, :stop], _measurements, %{error: _error}, _config),
     do: mark(:connect_failed)
+
+  def handle_event([:finch, :connect, :stop], _measurements, _metadata, _config),
+    do: mark(:connected)
+
+  def handle_event([:finch, :reused_connection], _measurements, _metadata, _config),
+    do: mark(:connected)
 
   def handle_event([:finch, :send, :start], _measurements, _metadata, _config), do: mark(:sent)
   def handle_event(_event, _measurements, _metadata, _config), do: :ok
