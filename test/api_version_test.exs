@@ -377,6 +377,51 @@ defmodule EventSourcingDBTest.ApiVersion do
                {"POST", "/api/v2/data/write-events"} => 5
              }
     end
+
+    # A request that joined while the API was unknown takes over the probe of
+    # one that asks again and goes down, and finds the v1 API remembered by
+    # then, which it takes without probing. The one that waits to ask again
+    # must not take that answer, which is the one it asks again about.
+    test "is asked again by a write that waits to ask again, even if the request that took over the probe took the remembered answer instead" do
+      test_process = self()
+      client = Client.new("http://handed-over.invalid", "secret")
+      on_exit(fn -> ApiVersion.forget(client) end)
+
+      probe = fn name ->
+        fn ->
+          send(test_process, {:probed, name, self()})
+
+          receive do
+            {:answer, answer} -> answer
+          end
+        end
+      end
+
+      :ok = ApiVersion.remember(client, :v1)
+
+      {first, monitor} =
+        spawn_monitor(fn -> ApiVersion.resolve(client, probe.(:first), stale: :v1) end)
+
+      assert_receive {:probed, :first, ^first}, 5_000
+
+      :ok = ApiVersion.forget(client)
+      unknown = Task.async(fn -> ApiVersion.resolve(client, probe.(:unknown)) end)
+      await_waiting(client, 1)
+
+      :ok = ApiVersion.remember(client, :v1)
+      again = Task.async(fn -> ApiVersion.resolve(client, probe.(:again), stale: :v1) end)
+      await_waiting(client, 2)
+
+      Process.exit(first, :kill)
+      assert_receive {:DOWN, ^monitor, :process, ^first, :killed}
+
+      assert Task.await(unknown) == {:ok, :v1}
+      assert_receive {:probed, :again, prober}, 5_000
+      send(prober, {:answer, {:ok, :v2}})
+
+      assert Task.await(again) == {:ok, :v2}
+      refute_received {:probed, :unknown, _prober}
+    end
   end
 
   describe "a probe that fails" do

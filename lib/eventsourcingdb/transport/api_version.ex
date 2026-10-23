@@ -95,8 +95,15 @@ defmodule EventSourcingDB.Transport.ApiVersion do
     with coordinator when is_pid(coordinator) <- Process.whereis(__MODULE__),
          {:ok, answer} <- call_join(coordinator, server) do
       case answer do
-        :probe -> probe_for_all(coordinator, server, probe, stale)
-        {:shared, result} -> result
+        :probe ->
+          {_source, result} = probe_for_all(coordinator, server, probe, stale)
+          result
+
+        {:shared, {:remembered, {:ok, ^stale}}} ->
+          join(server, probe, stale)
+
+        {:shared, {_source, result}} ->
+          result
       end
     else
       _down -> probe_and_remember(server, probe)
@@ -110,13 +117,17 @@ defmodule EventSourcingDB.Transport.ApiVersion do
   end
 
   # The probe that ran just before this one joined may have found the API
-  # already, unless it found the stale one again.
+  # already, unless it found the stale one again. The result tells whether it
+  # was probed or remembered: a request that joined while the API was unknown
+  # may take over the probe once the stale API is remembered again, and takes
+  # it then, which the requests that wait to ask again about it must not
+  # share, so they join again instead.
   defp probe_for_all(coordinator, server, probe, stale) do
     result =
       try do
         case known(server) do
-          version when version in [nil, stale] -> probe_and_remember(server, probe)
-          version -> {:ok, version}
+          version when version in [nil, stale] -> {:probed, probe_and_remember(server, probe)}
+          version -> {:remembered, {:ok, version}}
         end
       catch
         kind, reason ->
