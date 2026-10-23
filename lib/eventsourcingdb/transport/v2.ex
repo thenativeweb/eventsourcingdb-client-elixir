@@ -25,6 +25,8 @@ defmodule EventSourcingDB.Transport.V2 do
 
   alias EventSourcingDB.Transport.{ApiVersion, HTTP, WriteOutcome}
 
+  import ApiVersion, only: [is_without_v2_api: 1]
+
   #
   # region Requests with a single answer
   #
@@ -92,7 +94,7 @@ defmodule EventSourcingDB.Transport.V2 do
   # checked, and the request fails with its own error all the same.
   defp forget_if_gone(client) do
     fn %Req.Response{status: status} ->
-      if status in [404, 405], do: ApiVersion.forget(client)
+      if is_without_v2_api(status), do: ApiVersion.forget(client)
       :ok
     end
   end

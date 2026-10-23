@@ -8,14 +8,14 @@ defmodule :otel_ctx do
 end
 
 defmodule EventSourcingDBTest.StallTimeout do
-  alias EventSourcingDB.Client
+  alias EventSourcingDB.{Client, EventType, ManagementEvent}
   alias EventSourcingDB.ErrorCode
   alias EventSourcingDB.Errors.ConnectionStalled
   alias EventSourcingDB.Errors.DbApiError
   alias EventSourcingDB.Errors.OutcomeUnknown
   alias EventSourcingDB.Errors.TransmissionError
   alias EventSourcingDB.Transport.ApiVersion
-  alias EventSourcingDBTest.StreamServer
+  alias EventSourcingDBTest.{FakeServer, StreamServer}
   import EventSourcingDBTest.Utils
 
   # These tests measure how long a request takes, so they do not run
@@ -29,6 +29,22 @@ defmodule EventSourcingDBTest.StallTimeout do
     {"server", "EventSourcingDB/test"},
     {"content-type", "application/json"}
   ]
+
+  @schema_registered %{
+    "specversion" => "1.0",
+    "type" => "io.eventsourcingdb.api.event-schema-registered",
+    "source" => "https://www.eventsourcingdb.io",
+    "id" => "0",
+    "time" => "2026-10-18T12:00:00.000000000Z",
+    "subject" => "/api/v1/register-event-schema",
+    "datacontenttype" => "application/json",
+    "data" => %{"eventType" => "io.eventsourcingdb.test"}
+  }
+
+  @event_type_read %{
+    "type" => "eventType",
+    "data" => %{"type" => "io.eventsourcingdb.test", "hasEvents" => false}
+  }
 
   @ping_received %{
     "specversion" => "1.0",
@@ -210,48 +226,55 @@ defmodule EventSourcingDBTest.StallTimeout do
     end
   end
 
-  # Over HTTP/2, Finch bounds a whole request with a single answer with the
-  # receive timeout, which is the stall timeout, rather than each wait for data.
-  test "registers an event schema over HTTP/1 while the body arrives in parts, even if they take longer than the stall timeout" do
-    body =
-      Jason.encode!(%{
-        "specversion" => "1.0",
-        "type" => "io.eventsourcingdb.api.event-schema-registered",
-        "source" => "https://www.eventsourcingdb.io",
-        "id" => "0",
-        "time" => "2026-10-18T12:00:00.000000000Z",
-        "subject" => "/api/v1/register-event-schema",
-        "datacontenttype" => "application/json",
-        "data" => %{"eventType" => "io.eventsourcingdb.test"}
-      })
+  # Every block of an answer restarts the stall timeout, also over HTTP/2,
+  # where Finch bounds a whole request with the receive timeout rather than
+  # each wait for data, so that a request with a single answer is not cut off
+  # while its answer keeps arriving, with or without a timeout of the call.
+  for protocol <- [:http1, :http2] do
+    @protocol protocol
 
-    parts = 2 * div(@stall_timeout, @interval)
-    size = div(byte_size(body), parts) + 1
+    test "registers an event schema through the v1 API over #{protocol} while the answer arrives in parts, even if they take longer than the stall timeout" do
+      client = start_server(&send_in_parts(&1, @schema_registered), protocol: @protocol)
 
-    client =
-      start_server(
-        fn connection ->
-          StreamServer.send_head(connection, 200, @json_headers)
+      {result, elapsed} =
+        StreamServer.run_with_guard(fn ->
+          EventSourcingDB.register_event_schema(client, "io.eventsourcingdb.test", %{
+            "type" => "object"
+          })
+        end)
 
-          for part <- split_into_parts(body, size) do
-            Process.sleep(@interval)
-            StreamServer.send_data(connection, part)
-          end
+      assert {:ok, {:ok, %ManagementEvent{}}} = result
+      assert elapsed >= 2 * @stall_timeout
+    end
 
-          StreamServer.send_end(connection)
-        end,
-        []
-      )
+    test "reads an event type through the v2 API over #{protocol} while the answer arrives in parts, even if they take longer than the stall timeout" do
+      client = start_server(&send_in_parts(&1, @event_type_read), protocol: @protocol, api: :v2)
 
-    {result, elapsed} =
-      StreamServer.run_with_guard(fn ->
-        EventSourcingDB.register_event_schema(client, "io.eventsourcingdb.test", %{
-          "type" => "object"
-        })
-      end)
+      {result, elapsed} =
+        StreamServer.run_with_guard(fn ->
+          EventSourcingDB.read_event_type(client, "io.eventsourcingdb.test")
+        end)
 
-    assert {:ok, {:ok, %EventSourcingDB.ManagementEvent{}}} = result
-    assert elapsed >= 2 * @stall_timeout
+      assert {:ok, {:ok, %EventType{type: "io.eventsourcingdb.test"}}} = result
+      assert elapsed >= 2 * @stall_timeout
+    end
+
+    test "registers an event schema with a timeout over #{protocol} while the answer arrives in parts, even if they take longer than the stall timeout" do
+      client = start_server(&send_in_parts(&1, @schema_registered), protocol: @protocol)
+
+      {result, elapsed} =
+        StreamServer.run_with_guard(fn ->
+          EventSourcingDB.register_event_schema(
+            client,
+            "io.eventsourcingdb.test",
+            %{"type" => "object"},
+            timeout: 4 * @stall_timeout
+          )
+        end)
+
+      assert {:ok, {:ok, %ManagementEvent{}}} = result
+      assert elapsed >= 2 * @stall_timeout
+    end
   end
 
   test "fails to ping after the receive timeout that the client passes on to Req, if it sets no stall timeout" do
@@ -445,32 +468,110 @@ defmodule EventSourcingDBTest.StallTimeout do
     end
   end
 
-  # Req retries a request that is safe to repeat, which among the requests of
-  # the client SDK only ping is, as it is a GET request, three times after a
-  # transient error such as a timeout, after about one, two, and four seconds,
-  # which Req shortens by a random part of up to a tenth, and logs every
-  # retry. Before the first ping, the client asks the server for its API with
-  # a GET request as well, which Req retries in the same way, so a ping to a
-  # server that stalls fails once the attempts to ask for the API are used
-  # up.
+  # Every request makes a single attempt, a ping as well, although it is a GET
+  # request, which Req would otherwise retry three times after a timeout, after
+  # about one, two, and four seconds. So a ping to a server that stalls fails
+  # once the stall timeout has passed, whether it stalls while the client asks
+  # for the API before the first ping, which is a GET request as well, or as
+  # the ping itself.
   @tag capture_log: true
-  test "fails to ping after the stall timeout of each attempt that Req makes with its default retry" do
+  test "fails to ping after the stall timeout of a single attempt to ask for the API" do
     base_url = start_silent_server()
     client = Client.new(base_url: base_url, api_token: "secret", stall_timeout: @stall_timeout)
 
-    task = Task.async(fn -> measure(fn -> EventSourcingDB.ping(client) end) end)
-    {result, elapsed} = Task.await(task, 15_000)
+    {result, elapsed} = measure_within_watchdog(fn -> EventSourcingDB.ping(client) end)
 
+    assert accepted_connections() == 1
     assert {:error, %ConnectionStalled{}} = result
-    assert accepted_connections() == 4
-    assert elapsed >= 4 * @stall_timeout + 6_200
+    assert elapsed >= @stall_timeout
+    assert elapsed < 2 * @stall_timeout
+  end
+
+  for api <- [:v1, :v2] do
+    @api api
+
+    @tag capture_log: true
+    test "fails to ping through the #{api} API after the stall timeout of a single attempt" do
+      base_url = start_silent_server()
+      client = Client.new(base_url: base_url, api_token: "secret", stall_timeout: @stall_timeout)
+      :ok = ApiVersion.remember(client, @api)
+
+      {result, elapsed} = measure_within_watchdog(fn -> EventSourcingDB.ping(client) end)
+
+      assert accepted_connections() == 1
+      assert {:error, %ConnectionStalled{}} = result
+      assert elapsed >= @stall_timeout
+      assert elapsed < 2 * @stall_timeout
+    end
+  end
+
+  # A call that starts while a ping asks for the API shares the answer of that
+  # single attempt, rather than ask on its own.
+  @tag capture_log: true
+  test "fails to write events once the attempt to ask for the API that a ping began has stalled" do
+    base_url = start_silent_server()
+    client = Client.new(base_url: base_url, api_token: "secret", stall_timeout: @stall_timeout)
+
+    ping = Task.async(fn -> EventSourcingDB.ping(client) end)
+    assert_receive :accepted, @stall_timeout
+
+    {result, elapsed} =
+      measure_within_watchdog(fn -> EventSourcingDB.write_events(client, [candidate()]) end)
+
+    assert accepted_connections() == 0
+    assert {:error, %ConnectionStalled{}} = result
+    assert elapsed < 2 * @stall_timeout
+    assert {:error, %ConnectionStalled{}} = Task.await(ping)
+  end
+
+  # Nor does a ping make another attempt after any other error, such as a
+  # connection that the server closes without an answer.
+  test "fails to ask for the API before a ping after a single attempt if the server closes the connection" do
+    client = Client.new(FakeServer.start(fn _request -> :close end), "secret")
+
+    {result, _elapsed} = measure_within_watchdog(fn -> EventSourcingDB.ping(client) end)
+
+    assert requests_received() == 1
+    assert {:error, %TransmissionError{}} = result
+  end
+
+  for api <- [:v1, :v2] do
+    @api api
+
+    test "fails to ping through the #{api} API after a single attempt if the server closes the connection" do
+      client = Client.new(FakeServer.start(fn _request -> :close end), "secret")
+      :ok = ApiVersion.remember(client, @api)
+
+      {result, _elapsed} = measure_within_watchdog(fn -> EventSourcingDB.ping(client) end)
+
+      assert requests_received() == 1
+      assert {:error, %TransmissionError{}} = result
+    end
+  end
+
+  # Req retries as its own retry option says, which the client passes on.
+  @tag capture_log: true
+  test "pings as often as the retry option that the client passes on to Req says" do
+    client =
+      Client.new(
+        base_url: FakeServer.start(fn _request -> :close end),
+        api_token: "secret",
+        req_options: [retry: :safe_transient, retry_delay: fn _retry_count -> 0 end]
+      )
+
+    :ok = ApiVersion.remember(client, :v1)
+
+    {result, _elapsed} = measure_within_watchdog(fn -> EventSourcingDB.ping(client) end)
+
+    assert requests_received() == 4
+    assert {:error, %TransmissionError{}} = result
   end
 
   # Before its first request, a client asks the server for its API with a GET
-  # request, which Req retries only before a ping, so that a write that stalls
-  # while it asks fails after a single attempt, and was not sent.
+  # request, so that a write that stalls while it asks fails after a single
+  # attempt, and was not sent.
   @tag capture_log: true
-  test "fails to write events after the stall timeout of a single attempt to ask for the API, even with Req's default retry" do
+  test "fails to write events after the stall timeout of a single attempt to ask for the API" do
     base_url = start_silent_server()
     client = Client.new(base_url: base_url, api_token: "secret", stall_timeout: @stall_timeout)
 
@@ -483,7 +584,7 @@ defmodule EventSourcingDBTest.StallTimeout do
   end
 
   @tag capture_log: true
-  test "fails to write events with an unknown outcome after the stall timeout of a single attempt, even with Req's default retry" do
+  test "fails to write events with an unknown outcome after the stall timeout of a single attempt" do
     base_url = start_silent_server()
     client = Client.new(base_url: base_url, api_token: "secret", stall_timeout: @stall_timeout)
     :ok = ApiVersion.remember(client, :v1)
@@ -529,10 +630,35 @@ defmodule EventSourcingDBTest.StallTimeout do
     end
   end
 
+  # Every request has arrived once the call returns, since Req makes its
+  # retries, if any, before it returns.
+  defp requests_received(count \\ 0) do
+    receive do
+      {:fake_server, :request, _request} -> requests_received(count + 1)
+    after
+      0 -> count
+    end
+  end
+
   defp measure(fun) do
     started_at = System.monotonic_time(:millisecond)
     result = fun.()
     {result, System.monotonic_time(:millisecond) - started_at}
+  end
+
+  # Measures the function in a process of its own, and fails the test should
+  # it not return in time. A call that is retried after it stalled takes about
+  # eight seconds with the stall timeout of these tests, and one that nothing
+  # bounds never returns.
+  @watchdog_timeout 15_000
+
+  defp measure_within_watchdog(fun) do
+    task = Task.async(fn -> measure(fun) end)
+
+    case Task.yield(task, @watchdog_timeout) || Task.shutdown(task, :brutal_kill) do
+      {:ok, measured} -> measured
+      _other -> flunk("The call did not return within #{@watchdog_timeout} ms.")
+    end
   end
 
   # Pings a server that answers, and sends the connection options of the
@@ -598,12 +724,23 @@ defmodule EventSourcingDBTest.StallTimeout do
     create_test_eventcandidate("/test", %{"value" => 1})
   end
 
-  defp split_into_parts(data, size) when byte_size(data) > size do
-    <<part::binary-size(size), rest::binary>> = data
-    [part | split_into_parts(rest, size)]
-  end
+  # Answers with the item, whose text arrives in parts, one every interval,
+  # over twice the stall timeout. Each part holds at least one byte, since an
+  # empty chunk would end the answer over HTTP/1.
+  defp send_in_parts(connection, item) do
+    body = Jason.encode!(item)
+    count = 2 * div(@stall_timeout, @interval)
+    boundaries = Enum.map(0..count, &div(&1 * byte_size(body), count))
 
-  defp split_into_parts(data, _size), do: [data]
+    StreamServer.send_head(connection, 200, @json_headers)
+
+    for [from, to] <- Enum.chunk_every(boundaries, 2, 1, :discard) do
+      Process.sleep(@interval)
+      StreamServer.send_data(connection, binary_part(body, from, to - from))
+    end
+
+    StreamServer.send_end(connection)
+  end
 
   defp mailbox() do
     {:messages, messages} = Process.info(self(), :messages)

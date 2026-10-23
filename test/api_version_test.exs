@@ -508,11 +508,18 @@ defmodule EventSourcingDBTest.ApiVersion do
                EventSourcingDB.ping(client(url))
     end
 
-    test "is not retried before a write, which Req never retries" do
+    # A client that has Req retry the requests that are safe to repeat has
+    # the ping retried, but not the write, which is not a GET request, so the
+    # probe before the write makes a single attempt.
+    @tag capture_log: true
+    test "is not retried before a write, even if the client has Req retry" do
       url = FakeServer.start(fn _request -> {503, "unavailable\n"} end)
 
+      client =
+        client(url, req_options: [retry: :safe_transient, retry_delay: fn _retry_count -> 0 end])
+
       assert {:error, %DbApiError{status: 503}} =
-               EventSourcingDB.write_events(client(url), [candidate()])
+               EventSourcingDB.write_events(client, [candidate()])
 
       assert received_requests() == [{"GET", "/api/v2/system/ping"}]
     end

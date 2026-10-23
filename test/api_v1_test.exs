@@ -194,7 +194,7 @@ defmodule EventSourcingDBTest.ApiV1 do
                EventSourcingDB.read_event_type(client(url), "io.eventsourcingdb.test")
     end
 
-    test "is never retried, not even for a ping, which Req retries otherwise" do
+    test "is never retried, not even for a ping" do
       url = start_v1(fn _request -> {429, "too many requests"} end)
 
       assert {:error, %DbApiError{status: 429}} = EventSourcingDB.ping(client(url))

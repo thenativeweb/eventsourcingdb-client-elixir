@@ -15,7 +15,7 @@ The package can be installed by adding `eventsourcingdb` to your list of depende
 ```elixir
 def deps do
   [
-    {:eventsourcingdb, "~> 2.3.0"}
+    {:eventsourcingdb, "~> 2.4.1"}
   ]
 end
 ```
@@ -76,11 +76,9 @@ client = EventSourcingDB.Client.new(
 
 A request that stalls returns an `EventSourcingDB.Errors.ConnectionStalled` error, and a stream that stalls while you enumerate it raises that error. Writing events and registering an event schema return it wrapped in an `EventSourcingDB.Errors.OutcomeUnknown` once the request was sent (see [Handling Errors](#handling-errors)).
 
-Req retries a request that is safe to repeat after a transient error, such as a timeout over HTTP/1, by default three times, after about one, two, and four seconds. Among the requests of this client SDK, that is only `ping`, since it uses GET, together with the request with which a client asks for the API of the server before its first `ping`. So with the default stall timeout, a `ping` to a server that stalls fails only after about two minutes: four attempts of 30 seconds each, plus the seven seconds in between. To have it fail after the stall timeout, turn off Req's retries via `req_options: [retry: false]`. A request that the server refuses for its rate limit, with the status `429`, is never retried.
+The client SDK makes a single attempt for every request, so a request that stalls fails once the stall timeout has passed, and a request that the server refuses fails at once. To have Req retry requests, pass its `retry` option via `req_options`, for example `req_options: [retry: :safe_transient]`. Req then retries as that option says, except for the request with which the client asks the server for its API before any call other than `ping`, which it always makes once. Over HTTP/1.1, this may include a request that stalled or one that the server refused for its rate limit, so such a request fails only after the stall timeout of each attempt, plus the time in between. Over HTTP/2, and in a pool that you bring by name, the stall timeout covers all attempts of a request with a single answer together, and an attempt that stalls is not retried.
 
 If you do not set `stall_timeout`, but pass a `receive_timeout` on to Req via `req_options`, every request whose answer carries no heartbeats waits for that `receive_timeout` instead, as it always has, and connecting keeps Req's own timeout. A `stall_timeout` that you set takes precedence. Over the v2 API, every stream carries heartbeats, writes included, while over the v1 API, only observing events and running EventQL queries do.
-
-*Note that over HTTP/2, a request with a single answer must be answered completely within the stall timeout, since there [Finch](https://hexdocs.pm/finch) bounds the request as a whole rather than each wait for data. Over the v2 API, these are `ping`, `verify_api_token`, and `read_event_type`, and over the v1 API, writing events and registering an event schema as well. Streams are not affected.*
 
 ### Aborting a Call
 

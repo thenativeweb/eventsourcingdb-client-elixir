@@ -2,7 +2,7 @@ defmodule EventSourcingDB.TestContainer.Start do
   @moduledoc false
 
   # Starts the container of a TestContainer, and waits until the database in
-  # it answers a ping with 200 OK.
+  # it answers a ping with 200 OK, as TestContainer.Ping asks for it.
   #
   # Each attempt starts a container through Testcontainers, and gives it a
   # label with an id of the attempt, so that the containers of an attempt that
@@ -23,6 +23,7 @@ defmodule EventSourcingDB.TestContainer.Start do
   alias DockerEngineAPI.Model.{ContainerInspectResponse, ErrorResponse}
   alias EventSourcingDB.Errors.ContainerStartFailed
   alias EventSourcingDB.TestContainer
+  alias EventSourcingDB.TestContainer.Ping
   alias Testcontainers.{Container, ContainerBuilder}
 
   require Logger
@@ -33,11 +34,6 @@ defmodule EventSourcingDB.TestContainer.Start do
   @ping_timeout 1_000
   @log_tail_lines 20
   @removal_checks 50
-
-  # Req starts a pool of connections of its own for each set of connect
-  # options, which stays, so the pings always connect with the same options,
-  # and only the time they wait for an answer varies.
-  @ping_connect_options [timeout: @ping_timeout]
 
   @typedoc """
   Lets tests change how a container is started, inspected, and removed. Each
@@ -207,7 +203,7 @@ defmodule EventSourcingDB.TestContainer.Start do
       {:ok, {"running", host_port}} when is_integer(host_port) ->
         reachable = %{container | exposed_ports: [{config.port, host_port}]}
 
-        if answers_ping?(reachable, deadline) do
+        if Ping.answers?(TestContainer.get_base_url(reachable), deadline, @ping_timeout) do
           {:ok, reachable}
         else
           retry_reachable(config, docker, container, deadline)
@@ -229,27 +225,6 @@ defmodule EventSourcingDB.TestContainer.Start do
       await_reachable(config, docker, container, deadline)
     else
       :unreachable
-    end
-  end
-
-  defp answers_ping?(container, deadline) do
-    timeout = min(@ping_timeout, deadline - now())
-
-    if timeout > 0 do
-      url = TestContainer.get_base_url(container) <> "api/v1/ping"
-
-      response =
-        Req.get(url,
-          retry: false,
-          redirect: false,
-          decode_body: false,
-          connect_options: @ping_connect_options,
-          receive_timeout: timeout
-        )
-
-      match?({:ok, %Req.Response{status: 200}}, response)
-    else
-      false
     end
   end
 
