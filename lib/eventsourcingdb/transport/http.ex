@@ -684,6 +684,12 @@ defmodule EventSourcingDB.Transport.HTTP do
   # With the option authorize: false, the request carries no API token, which
   # the client SDK sends only where it is needed: with every request but the
   # pings, which EventSourcingDB answers without one.
+  #
+  # Every request makes a single attempt, so that a request that stalls fails
+  # once the stall timeout has passed, rather than after the stall timeout of
+  # each attempt that Req makes by default for a GET request, such as a ping.
+  # A client that wants Req to retry passes Req's retry option in its
+  # req_options, which take precedence.
   @spec build_request(Client.t(), atom(), String.t(), term(), keyword()) :: Req.Request.t()
   def build_request(client, method, path, body, options) do
     {authorize?, options} = Keyword.pop(options, :authorize, true)
@@ -692,7 +698,7 @@ defmodule EventSourcingDB.Transport.HTTP do
       base_url: client.base_url,
       method: method,
       url: path,
-      retry: &retry?/2
+      retry: false
     ]
     |> Keyword.merge(auth_options(client, authorize?))
     |> Keyword.merge(body_options(body))
@@ -701,26 +707,6 @@ defmodule EventSourcingDB.Transport.HTTP do
     |> put_connect_timeout(client.stall_timeout)
     |> Req.new()
   end
-
-  # Req retries a request that is safe to repeat, which among the requests of
-  # the client SDK only ping is, as it is a GET request, after a transient
-  # error, as it does by default, but never one that the server refused for
-  # its rate limit, since the caller decides whether to wait and try again.
-  @doc false
-  @spec retry?(Req.Request.t(), Req.Response.t() | Exception.t()) :: boolean()
-  def retry?(%Req.Request{method: method}, response_or_exception) do
-    method in [:get, :head] and transient?(response_or_exception)
-  end
-
-  defp transient?(%Req.Response{status: status}), do: status in [408, 500, 502, 503, 504]
-
-  defp transient?(%Req.TransportError{reason: reason}),
-    do: reason in [:timeout, :econnrefused, :closed]
-
-  defp transient?(%Req.HTTPError{protocol: :http2, reason: reason}),
-    do: reason in [:unprocessed, :pool_not_available]
-
-  defp transient?(_exception), do: false
 
   defp auth_options(client, true), do: [auth: {:bearer, client.api_token}]
   defp auth_options(_client, false), do: []
