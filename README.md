@@ -80,8 +80,6 @@ The client SDK makes a single attempt for every request, so a request that stall
 
 If you do not set `stall_timeout`, but pass a `receive_timeout` on to Req via `req_options`, every request whose answer carries no heartbeats waits for that `receive_timeout` instead, as it always has, and connecting keeps Req's own timeout. A `stall_timeout` that you set takes precedence. Over the v2 API, every stream carries heartbeats, writes included, while over the v1 API, only observing events and running EventQL queries do.
 
-*Note that over HTTP/2, a request with a single answer must be answered completely within the stall timeout, since there [Finch](https://hexdocs.pm/finch) bounds the request as a whole rather than each wait for data. Over the v2 API, these are `ping`, `verify_api_token`, and `read_event_type`, and over the v1 API, writing events and registering an event schema as well. Streams are not affected.*
-
 ### Aborting a Call
 
 To limit how long a single call may take, pass the `timeout` option to it, in milliseconds. Every function takes it as its last argument, and in place of an optional argument before, such as the preconditions of a write or the options struct of a read:

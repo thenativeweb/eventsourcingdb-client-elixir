@@ -8,7 +8,7 @@ defmodule :otel_ctx do
 end
 
 defmodule EventSourcingDBTest.StallTimeout do
-  alias EventSourcingDB.Client
+  alias EventSourcingDB.{Client, EventType, ManagementEvent}
   alias EventSourcingDB.ErrorCode
   alias EventSourcingDB.Errors.ConnectionStalled
   alias EventSourcingDB.Errors.DbApiError
@@ -29,6 +29,22 @@ defmodule EventSourcingDBTest.StallTimeout do
     {"server", "EventSourcingDB/test"},
     {"content-type", "application/json"}
   ]
+
+  @schema_registered %{
+    "specversion" => "1.0",
+    "type" => "io.eventsourcingdb.api.event-schema-registered",
+    "source" => "https://www.eventsourcingdb.io",
+    "id" => "0",
+    "time" => "2026-10-18T12:00:00.000000000Z",
+    "subject" => "/api/v1/register-event-schema",
+    "datacontenttype" => "application/json",
+    "data" => %{"eventType" => "io.eventsourcingdb.test"}
+  }
+
+  @event_type_read %{
+    "type" => "eventType",
+    "data" => %{"type" => "io.eventsourcingdb.test", "hasEvents" => false}
+  }
 
   @ping_received %{
     "specversion" => "1.0",
@@ -210,48 +226,55 @@ defmodule EventSourcingDBTest.StallTimeout do
     end
   end
 
-  # Over HTTP/2, Finch bounds a whole request with a single answer with the
-  # receive timeout, which is the stall timeout, rather than each wait for data.
-  test "registers an event schema over HTTP/1 while the body arrives in parts, even if they take longer than the stall timeout" do
-    body =
-      Jason.encode!(%{
-        "specversion" => "1.0",
-        "type" => "io.eventsourcingdb.api.event-schema-registered",
-        "source" => "https://www.eventsourcingdb.io",
-        "id" => "0",
-        "time" => "2026-10-18T12:00:00.000000000Z",
-        "subject" => "/api/v1/register-event-schema",
-        "datacontenttype" => "application/json",
-        "data" => %{"eventType" => "io.eventsourcingdb.test"}
-      })
+  # Every block of an answer restarts the stall timeout, also over HTTP/2,
+  # where Finch bounds a whole request with the receive timeout rather than
+  # each wait for data, so that a request with a single answer is not cut off
+  # while its answer keeps arriving, with or without a timeout of the call.
+  for protocol <- [:http1, :http2] do
+    @protocol protocol
 
-    parts = 2 * div(@stall_timeout, @interval)
-    size = div(byte_size(body), parts) + 1
+    test "registers an event schema through the v1 API over #{protocol} while the answer arrives in parts, even if they take longer than the stall timeout" do
+      client = start_server(&send_in_parts(&1, @schema_registered), protocol: @protocol)
 
-    client =
-      start_server(
-        fn connection ->
-          StreamServer.send_head(connection, 200, @json_headers)
+      {result, elapsed} =
+        StreamServer.run_with_guard(fn ->
+          EventSourcingDB.register_event_schema(client, "io.eventsourcingdb.test", %{
+            "type" => "object"
+          })
+        end)
 
-          for part <- split_into_parts(body, size) do
-            Process.sleep(@interval)
-            StreamServer.send_data(connection, part)
-          end
+      assert {:ok, {:ok, %ManagementEvent{}}} = result
+      assert elapsed >= 2 * @stall_timeout
+    end
 
-          StreamServer.send_end(connection)
-        end,
-        []
-      )
+    test "reads an event type through the v2 API over #{protocol} while the answer arrives in parts, even if they take longer than the stall timeout" do
+      client = start_server(&send_in_parts(&1, @event_type_read), protocol: @protocol, api: :v2)
 
-    {result, elapsed} =
-      StreamServer.run_with_guard(fn ->
-        EventSourcingDB.register_event_schema(client, "io.eventsourcingdb.test", %{
-          "type" => "object"
-        })
-      end)
+      {result, elapsed} =
+        StreamServer.run_with_guard(fn ->
+          EventSourcingDB.read_event_type(client, "io.eventsourcingdb.test")
+        end)
 
-    assert {:ok, {:ok, %EventSourcingDB.ManagementEvent{}}} = result
-    assert elapsed >= 2 * @stall_timeout
+      assert {:ok, {:ok, %EventType{type: "io.eventsourcingdb.test"}}} = result
+      assert elapsed >= 2 * @stall_timeout
+    end
+
+    test "registers an event schema with a timeout over #{protocol} while the answer arrives in parts, even if they take longer than the stall timeout" do
+      client = start_server(&send_in_parts(&1, @schema_registered), protocol: @protocol)
+
+      {result, elapsed} =
+        StreamServer.run_with_guard(fn ->
+          EventSourcingDB.register_event_schema(
+            client,
+            "io.eventsourcingdb.test",
+            %{"type" => "object"},
+            timeout: 4 * @stall_timeout
+          )
+        end)
+
+      assert {:ok, {:ok, %ManagementEvent{}}} = result
+      assert elapsed >= 2 * @stall_timeout
+    end
   end
 
   test "fails to ping after the receive timeout that the client passes on to Req, if it sets no stall timeout" do
@@ -701,12 +724,23 @@ defmodule EventSourcingDBTest.StallTimeout do
     create_test_eventcandidate("/test", %{"value" => 1})
   end
 
-  defp split_into_parts(data, size) when byte_size(data) > size do
-    <<part::binary-size(size), rest::binary>> = data
-    [part | split_into_parts(rest, size)]
-  end
+  # Answers with the item, whose text arrives in parts, one every interval,
+  # over twice the stall timeout. Each part holds at least one byte, since an
+  # empty chunk would end the answer over HTTP/1.
+  defp send_in_parts(connection, item) do
+    body = Jason.encode!(item)
+    count = 2 * div(@stall_timeout, @interval)
+    boundaries = Enum.map(0..count, &div(&1 * byte_size(body), count))
 
-  defp split_into_parts(data, _size), do: [data]
+    StreamServer.send_head(connection, 200, @json_headers)
+
+    for [from, to] <- Enum.chunk_every(boundaries, 2, 1, :discard) do
+      Process.sleep(@interval)
+      StreamServer.send_data(connection, binary_part(body, from, to - from))
+    end
+
+    StreamServer.send_end(connection)
+  end
 
   defp mailbox() do
     {:messages, messages} = Process.info(self(), :messages)

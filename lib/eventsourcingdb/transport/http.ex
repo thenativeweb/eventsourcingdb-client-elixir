@@ -42,11 +42,11 @@ defmodule EventSourcingDB.Transport.HTTP do
   # region Requests with a single answer
   #
 
-  # A request with a single answer runs in the calling process. Finch bounds
-  # each wait for data with the receive timeout there, and connecting with the
-  # connect timeout (see build_request/5). The body is not decoded, so that
-  # each API decodes it as it needs, for example events with the text of their
-  # data as it arrived, for verifying their hash.
+  # A request with a single answer waits for each block of data at most for
+  # the receive timeout, and connecting at most for the connect timeout (see
+  # build_request/5). The body is not decoded, so that each API decodes it as
+  # it needs, for example events with the text of their data as it arrived,
+  # for verifying their hash.
   #
   # With the option track_sending: true, a request that failed before it was
   # sent fails with {:not_sent, reason}, so that a write can tell that it was
@@ -87,21 +87,37 @@ defmodule EventSourcingDB.Transport.HTTP do
     end
   end
 
-  # Without a deadline, the request runs in the calling process. With one, it
-  # runs through the relay, as a stream does (see request_through_relay/3),
-  # so that the caller can abort it at the deadline, which closes its
-  # connection, or resets its stream in an HTTP/2 pool. Finch then bounds the
-  # waits for data with the receive timeout as it does in the calling
-  # process, also across the attempts of a retry, and the caller reads the
-  # body of the response, until the deadline.
-  defp request_one_shot(req, timeout, nil) do
-    RequestPhase.track(fn -> Req.request(req, receive_timeout: timeout, decode_body: false) end)
+  # Without a deadline, in a pool whose waits Finch bounds one by one (see
+  # finch_bounds_each_wait?/1), the request runs in the calling process, and
+  # Finch bounds each wait for data with the receive timeout. Every other
+  # request runs through the relay, as a stream does (see
+  # request_through_relay/3), and the caller reads the body of the response:
+  #
+  #   * With a deadline, so that the caller can abort the request at the
+  #     deadline, which closes its connection, or resets its stream in an
+  #     HTTP/2 pool.
+  #   * In every other pool, such as an HTTP/2 pool, where Finch bounds the
+  #     request as a whole, so that an answer whose data keeps arriving would
+  #     end once the receive timeout has passed. There the request asks Finch
+  #     for no timeout, and the caller bounds each wait itself, as for a
+  #     stream.
+  defp request_one_shot(req, timeout, deadline) do
+    if deadline == nil and finch_bounds_each_wait?(req) do
+      RequestPhase.track(fn -> Req.request(req, receive_timeout: timeout, decode_body: false) end)
+    else
+      request_one_shot_through_relay(req, timeout, deadline)
+    end
   end
 
-  defp request_one_shot(req, timeout, deadline) do
-    case request_through_relay(req, deadline, receive_timeout: timeout) do
+  defp request_one_shot_through_relay(req, timeout, deadline) do
+    {relay_options, wait} =
+      if finch_bounds_each_wait?(req),
+        do: {[receive_timeout: timeout], :infinity},
+        else: {[wait: relay_wait(timeout)], timeout}
+
+    case request_through_relay(req, deadline, relay_options) do
       {{:ok, response}, phase} ->
-        case read_body(response, :infinity, deadline, "") do
+        case read_body(response, wait, deadline, "") do
           {:ok, body} ->
             {{:ok, %{response | body: body}}, phase}
 
@@ -471,8 +487,8 @@ defmodule EventSourcingDB.Transport.HTTP do
   # pool, and the whole request in an HTTP/2 pool. Req starts an HTTP/2 pool if
   # the protocols leave out HTTP/1 (with both, the protocol is negotiated per
   # connection within an HTTP/1 pool). The protocols of a pool that the client
-  # brings by name are unknown, so the stream bounds each wait itself there,
-  # whether the pool speaks HTTP/1 or HTTP/2.
+  # brings by name are unknown, so the client SDK bounds each wait itself
+  # there, whether the pool speaks HTTP/1 or HTTP/2.
   defp finch_bounds_each_wait?(req) do
     case Req.Request.get_option(req, :finch) do
       nil ->
@@ -502,20 +518,22 @@ defmodule EventSourcingDB.Transport.HTTP do
   #
 
   # Over HTTP/2, Finch bounds a whole request with the receive timeout, rather
-  # than each wait for data, so a stream that runs for longer would end while
-  # data still arrives, and in an HTTP/1 pool, the receive timeout would end a
-  # stream with heartbeats with an error of its own. So such a stream asks
-  # Finch for no timeout, and bounds each wait itself: the wait for the
-  # response headers here, from sending the request, and the wait for each
-  # block of the response in receive_items/1. Req then waits for the response
-  # headers in a receive without any bound, which the caller can not
-  # interrupt, so the request runs in a relay process, which forwards the
-  # messages of the response to the caller, while the caller bounds the wait.
-  # A pool that the client brings by name takes this path as well, even one
-  # that speaks HTTP/1, where Finch then waits for data without a bound, too.
-  # So do the requests of a call with a deadline, so that the caller can stop
-  # the relay once the deadline passed, where a request with a single answer
-  # leaves the waits for data to Finch, as it does in the calling process.
+  # than each wait for data, so a stream, or an answer, that runs for longer
+  # would end while data still arrives, and in an HTTP/1 pool, the receive
+  # timeout would end a stream with heartbeats with an error of its own. So
+  # such a request asks Finch for no timeout, and bounds each wait itself: the
+  # wait for the response headers here, from sending the request, and the wait
+  # for each block of the response in receive_items/1, or in read_body/4 for
+  # a request with a single answer. Req then waits for the response headers
+  # in a receive without any bound, which the caller can not interrupt, so
+  # the request runs in a relay process, which forwards the messages of the
+  # response to the caller, while the caller bounds the wait. A pool that the
+  # client brings by name takes this path as well, even one that speaks
+  # HTTP/1, where Finch then waits for data without a bound, too. So do the
+  # requests of a call with a deadline, so that the caller can stop the relay
+  # once the deadline passed, where a request with a single answer in an
+  # HTTP/1 pool leaves the waits for data to Finch, as it does in the calling
+  # process.
   #
   # The relay is linked to the caller while it waits for the response headers,
   # and monitors it afterwards, so it does not outlive the caller. Finch in turn
@@ -523,7 +541,8 @@ defmodule EventSourcingDB.Transport.HTTP do
   #
   # The caller waits for the response headers at most for the given wait, and
   # until the deadline of the call, while Finch waits for each block of data
-  # at most for the given receive timeout, which is :infinity for a stream.
+  # at most for the given receive timeout, which is :infinity unless Finch
+  # bounds the waits of a request with a single answer.
   defp request_through_relay(req, deadline, options) do
     caller = self()
     context = process_context()
@@ -688,7 +707,9 @@ defmodule EventSourcingDB.Transport.HTTP do
   # Every request makes a single attempt, so that a request that stalls fails
   # once the stall timeout has passed, rather than after the stall timeout of
   # each attempt that Req makes by default for a GET request, such as a ping.
-  # A client that wants Req to retry passes Req's retry option in its
+  # In the relay, the wait for the response headers would span every attempt
+  # as well, so that attempts that failed for another reason would end as a
+  # stall. A client that wants Req to retry passes Req's retry option in its
   # req_options, which take precedence.
   @spec build_request(Client.t(), atom(), String.t(), term(), keyword()) :: Req.Request.t()
   def build_request(client, method, path, body, options) do
