@@ -69,20 +69,25 @@ defmodule EventSourcingDBTest.TestContainerWait do
       assert pings() == [@v2_ping]
     end
 
-    test "tries again after the v2 ping answered with another status, without asking for the " <>
-           "v1 ping, when #{waiter} waits" do
-      port = serve(%{@v2_ping => [503, 200], @v1_ping => [200]})
+    # Only 200 OK counts, not any other status of success.
+    for status <- [503, 204] do
+      @status status
 
-      assert wait(@wait, port) == :ok
-      assert pings() == [@v2_ping, @v2_ping]
-    end
+      test "tries again after the v2 ping answered with #{status}, without asking for the " <>
+             "v1 ping, when #{waiter} waits" do
+        port = serve(%{@v2_ping => [@status, 200], @v1_ping => [200]})
 
-    test "tries again with the v2 ping after the v1 ping answered with another status than 200, " <>
-           "when #{waiter} waits" do
-      port = serve(%{@v2_ping => [404, 200], @v1_ping => [503]})
+        assert wait(@wait, port) == :ok
+        assert pings() == [@v2_ping, @v2_ping]
+      end
 
-      assert wait(@wait, port) == :ok
-      assert pings() == [@v2_ping, @v1_ping, @v2_ping]
+      test "tries again with the v2 ping after the v1 ping answered with #{status}, " <>
+             "when #{waiter} waits" do
+        port = serve(%{@v2_ping => [404, 200], @v1_ping => [@status]})
+
+        assert wait(@wait, port) == :ok
+        assert pings() == [@v2_ping, @v1_ping, @v2_ping]
+      end
     end
   end
 
@@ -95,10 +100,13 @@ defmodule EventSourcingDBTest.TestContainerWait do
   end
 
   # Testcontainers gives each request whatever is left of its wait, so a v2
-  # ping that runs out of time ends the wait.
-  test "gives up once the v2 ping ran out of time, without asking for the v1 ping, " <>
+  # ping that runs out of time ends the wait. That no v1 ping follows a v2
+  # ping that ran out of time can not show here, as none would be sent past
+  # the end of the wait anyway, so the test of start/1 above shows it, which
+  # asks through the same TestContainer.Ping.
+  test "gives the v2 ping the rest of the wait, and gives up once it ran out of time, " <>
          "when Testcontainers waits" do
-    port = serve(%{@v2_ping => [:silent], @v1_ping => [200]})
+    port = serve(%{@v2_ping => [:silent]})
     %Container{wait_strategies: [wait_strategy]} = ContainerBuilder.build(TestContainer.new())
 
     started_at = System.monotonic_time(:millisecond)
@@ -106,7 +114,7 @@ defmodule EventSourcingDBTest.TestContainerWait do
     elapsed = System.monotonic_time(:millisecond) - started_at
 
     assert {:error, :timeout, _wait_strategy} = result
-    assert pings() == [@v2_ping]
+    assert Enum.count(pings(), &(&1 == @v2_ping)) == 1
     assert elapsed >= wait_strategy.timeout
     assert elapsed < wait_strategy.timeout + 5_000
   end

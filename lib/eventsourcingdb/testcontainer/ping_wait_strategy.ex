@@ -12,8 +12,10 @@ defmodule EventSourcingDB.TestContainer.PingWaitStrategy do
   # attempts pause for 0.5 seconds at first, doubling up to 5 seconds, so
   # after the 10 seconds, another attempt follows within 5 seconds. So the
   # wait ends after 16 seconds, which leaves that attempt a second. Each
-  # request may take whatever is left of the 16 seconds, so a request that
-  # runs out of time ends the wait.
+  # request may wait for its answer for whatever is left of the 16 seconds,
+  # so a request that runs out of time ends the wait. Connecting is bounded
+  # by TestContainer.Ping alone, at 1 second, so the wait may end up to a
+  # second past the 16 seconds.
 
   alias EventSourcingDB.TestContainer.Ping
   alias Testcontainers.Container

@@ -41,7 +41,9 @@ defmodule EventSourcingDB.TestContainer.Ping do
   end
 
   # Waits for an answer for the request timeout, and never past the
-  # deadline.
+  # deadline. Connecting takes up to the connect timeout of the pool,
+  # whatever is left until the deadline, so a request may end up to that
+  # long past it.
   defp get(url, deadline, request_timeout) do
     timeout = min(request_timeout, deadline - System.monotonic_time(:millisecond))
 
