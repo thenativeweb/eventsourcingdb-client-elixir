@@ -39,10 +39,13 @@ defmodule EventSourcingDB.Transport do
   defp stale(:write_events_needing_v2), do: :v1
   defp stale(_call), do: nil
 
-  # Req retries a GET request after a transient error, as the probe is. Only a
-  # ping is a GET request among the calls of the client SDK, so the probe is
-  # retried only before a ping, as the ping would be, and makes a single
-  # attempt before every other call, which Req never retries.
+  # Every request makes a single attempt, unless the client has Req retry
+  # through its req_options. Even then, the probe makes a single attempt
+  # before every call but a ping. There it is a request of its own, which the
+  # client SDK adds to the call, and its retries would lengthen the call by
+  # attempts at a request that the caller did not make. Before a ping, it asks
+  # for what the ping itself asks for over the v2 API, so it is retried as the
+  # ping would be.
   #
   # Like the ping, the probe carries no API token, since EventSourcingDB
   # answers the v2 ping without one.

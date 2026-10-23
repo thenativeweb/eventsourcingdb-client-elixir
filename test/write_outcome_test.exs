@@ -65,6 +65,25 @@ defmodule EventSourcingDBTest.WriteOutcome do
     assert {:error, %ConnectionStalled{}} = write(:write_events, client)
   end
 
+  # A pool that the client brings by name connects as its own options say,
+  # within 30 seconds by default, so the wait for the answer, which the stall
+  # timeout bounds, may end while the write still connects. An HTTP/1 pool
+  # tells that the write had no connection by then.
+  for api <- [:v1, :v2] do
+    @api api
+
+    for call <- [:write_events, :register_event_schema] do
+      @call call
+
+      test "#{call} over the #{api} API through a named HTTP/1 pool was not stored if the stall timeout passes while it connects" do
+        client = client(unresponsive_url(), finch: start_pool())
+        :ok = ApiVersion.remember(client, @api)
+
+        assert {:error, %ConnectionStalled{}} = write(@call, client)
+      end
+    end
+  end
+
   # An HTTP/2 pool without a connection refuses the request before it sends
   # it, and over the v2 API, Finch raises that for a stream, rather than
   # return it.
@@ -240,6 +259,13 @@ defmodule EventSourcingDBTest.WriteOutcome do
       {:ok, _socket} -> fill_queue(port, count + 1)
       {:error, :timeout} -> :ok
     end
+  end
+
+  defp start_pool() do
+    name = Module.concat(__MODULE__, "Finch#{System.unique_integer([:positive])}")
+    start_supervised!({Finch, name: name, pools: %{default: [protocols: [:http1]]}})
+
+    name
   end
 
   defp closed_url() do
