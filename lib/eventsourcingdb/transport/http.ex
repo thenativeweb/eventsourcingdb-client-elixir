@@ -542,7 +542,10 @@ defmodule EventSourcingDB.Transport.HTTP do
   # The caller waits for the response headers at most for the given wait, and
   # until the deadline of the call, while Finch waits for each block of data
   # at most for the given receive timeout, which is :infinity unless Finch
-  # bounds the waits of a request with a single answer.
+  # bounds the waits of a request with a single answer. A request whose wait
+  # ran out before it had a connection, which an HTTP/1 pool tells, was not
+  # sent, for example in a pool that the client brings by name, which may
+  # take longer to connect than the stall timeout.
   defp request_through_relay(req, deadline, options) do
     caller = self()
     context = process_context()
@@ -560,14 +563,16 @@ defmodule EventSourcingDB.Transport.HTTP do
     after
       min(Keyword.get(options, :wait, :infinity), Deadline.remaining(deadline)) ->
         timed_out? = Deadline.passed?(deadline)
-        connected? = timed_out? and connected?(relay, req)
+        connected? = connected?(relay, req)
         Process.unlink(relay)
         stop_relay(relay, monitor)
         discard_relay_result(relay)
 
-        if timed_out?,
-          do: {:timed_out, connected?},
-          else: {{:error, %Req.TransportError{reason: :timeout}}, :maybe_sent}
+        cond do
+          timed_out? -> {:timed_out, connected?}
+          connected? -> {{:error, %Req.TransportError{reason: :timeout}}, :maybe_sent}
+          true -> {{:error, %Req.TransportError{reason: :timeout}}, :not_sent}
+        end
     end
   end
 
