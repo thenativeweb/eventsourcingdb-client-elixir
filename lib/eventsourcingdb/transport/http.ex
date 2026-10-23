@@ -747,8 +747,14 @@ defmodule EventSourcingDB.Transport.HTTP do
 
   # Connecting counts toward a stall timeout that the client sets, so it bounds
   # connecting as well, unless the client sets a connect timeout of its own.
-  # Without a stall timeout, Req's connect timeout stays, and a pool that the
-  # client brings by name is connected as its options say.
+  # Without a stall timeout, Req's connect timeout stays. A pool that the
+  # client configures through the :finch option, which Req does not take
+  # together with connect options, connects as its own options say. Where the
+  # client SDK waits for the response headers itself, though, that wait
+  # includes connecting, so the stall timeout bounds connecting there as
+  # well: for a stream with heartbeats, and for every request in a pool whose
+  # waits Finch does not bound one by one, such as one that the client brings
+  # by name (see request_through_relay/3).
   defp put_connect_timeout(opts, stall_timeout) do
     if stall_timeout == nil or Keyword.has_key?(opts, :finch) do
       opts
