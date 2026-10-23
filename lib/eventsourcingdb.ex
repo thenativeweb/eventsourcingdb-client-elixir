@@ -22,7 +22,8 @@ defmodule EventSourcingDB do
     IsSubjectPristine,
     IsSubjectPopulated,
     IsSubjectOnEventId,
-    IsEventQLQueryTrue
+    IsEventQLQueryTrue,
+    PreconditionOptions
   }
 
   alias EventSourcingDB.Transport
@@ -209,7 +210,7 @@ defmodule EventSourcingDB do
 
   `IsSubjectPristine` then holds if neither the subject nor any nested subject has an event, `IsSubjectPopulated` if any of them has one, and `IsSubjectOnEventId` if the latest event among all of them has the given ID. With `recursive` set to `false`, the precondition checks the subject alone, as without options.
 
-  *Note that checking a precondition recursively requires a server with the v2 API. Against a server without it, the function returns an `EventSourcingDB.Errors.IncompatibleServer` error and writes nothing.*
+  *Note that checking a precondition recursively requires a server with the v2 API. If the client SDK remembered that the server does not offer it, it asks the server again first, since the server may have been upgraded meanwhile. If the server still does not offer the v2 API, the function returns an `EventSourcingDB.Errors.IncompatibleServer` error and writes nothing.*
 
   ### Using the `IsEventQLQueryTrue` precondition
 
@@ -269,7 +270,13 @@ defmodule EventSourcingDB do
 
   def write_events(client, events, preconditions, opts) when is_list(events) do
     deadline = deadline!(opts)
-    with_api(client, deadline, & &1.write_events(client, events, preconditions, deadline))
+
+    call =
+      if Enum.any?(preconditions, &PreconditionOptions.needs_v2_api?/1),
+        do: :write_events_needing_v2,
+        else: :other
+
+    with_api(client, deadline, call, & &1.write_events(client, events, preconditions, deadline))
   end
 
   @spec write_events!(

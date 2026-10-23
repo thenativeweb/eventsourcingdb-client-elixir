@@ -17,6 +17,11 @@ defmodule EventSourcingDB.Transport.ApiVersion do
   # A request of a call with a timeout probes on its own, with share: false,
   # so that it neither waits for a probe that its timeout does not bound, nor
   # hands its own timeout on to the requests that would share its probe.
+  #
+  # A request that can not use the API that is remembered, with stale: set
+  # to it, probes again as if the API were unknown, and joins the probe that
+  # runs, if any. Every other request keeps using the remembered API
+  # meanwhile, rather than wait for a probe that it does not need.
 
   use GenServer
 
@@ -31,15 +36,16 @@ defmodule EventSourcingDB.Transport.ApiVersion do
   def start_link(_options), do: GenServer.start_link(__MODULE__, %{}, name: __MODULE__)
 
   # Returns the API of the server of the client, and probes for it if it is
-  # unknown.
+  # unknown, or if it is the stale one.
   @spec resolve(Client.t(), probe(), keyword()) :: {:ok, version()} | {:error, Exception.t()}
   def resolve(%Client{} = client, probe, options \\ []) do
     server = server(client)
+    stale = Keyword.get(options, :stale)
 
     case {known(server), Keyword.get(options, :share, true)} do
-      {nil, true} -> join(server, probe)
-      {nil, false} -> probe_and_remember(server, probe)
-      {version, _share} -> {:ok, version}
+      {version, _share} when version not in [nil, stale] -> {:ok, version}
+      {_unknown_or_stale, true} -> join(server, probe, stale)
+      {_unknown_or_stale, false} -> probe_and_remember(server, probe)
     end
   end
 
@@ -85,11 +91,11 @@ defmodule EventSourcingDB.Transport.ApiVersion do
   # A request that waits for the probe of another one probes on its own
   # should the process of this module go down meanwhile, as does a request
   # that finds the process down.
-  defp join(server, probe) do
+  defp join(server, probe, stale) do
     with coordinator when is_pid(coordinator) <- Process.whereis(__MODULE__),
          {:ok, answer} <- call_join(coordinator, server) do
       case answer do
-        :probe -> probe_for_all(coordinator, server, probe)
+        :probe -> probe_for_all(coordinator, server, probe, stale)
         {:shared, result} -> result
       end
     else
@@ -104,12 +110,12 @@ defmodule EventSourcingDB.Transport.ApiVersion do
   end
 
   # The probe that ran just before this one joined may have found the API
-  # already.
-  defp probe_for_all(coordinator, server, probe) do
+  # already, unless it found the stale one again.
+  defp probe_for_all(coordinator, server, probe, stale) do
     result =
       try do
         case known(server) do
-          nil -> probe_and_remember(server, probe)
+          version when version in [nil, stale] -> probe_and_remember(server, probe)
           version -> {:ok, version}
         end
       catch

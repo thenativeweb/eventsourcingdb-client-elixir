@@ -42,7 +42,7 @@ If you want to verify the API token, call `verify_api_token`. If the token is in
 
 ### Talking to Servers With and Without the v2 API
 
-The client SDK works with servers that offer the v2 API of EventSourcingDB, and with servers that do not, such as EventSourcingDB 1.2. Creating a client makes no request. On the first request to a server, the client SDK asks the server for `GET /api/v2/system/ping`, and remembers the answer for every client of the same `base_url`: it then talks to the server through the v2 API if the server offers it, and through the v1 API otherwise. If that first request can not find out, for example because the server is not reachable, the request fails with that error, and the next one asks again. If a server answers a path of the v2 API with 404 or 405, for example after it was rolled back to a version without it, the client SDK asks again on the next request. Requests that start at the same time share a single attempt to find out.
+The client SDK works with servers that offer the v2 API of EventSourcingDB, and with servers that do not, such as EventSourcingDB 1.2. Creating a client makes no request. On the first request to a server, the client SDK asks the server for `GET /api/v2/system/ping`, and remembers the answer for every client of the same `base_url`: it then talks to the server through the v2 API if the server offers it, and through the v1 API otherwise. If that first request can not find out, for example because the server is not reachable, the request fails with that error, and the next one asks again. If a server answers a path of the v2 API with 404 or 405, for example after it was rolled back to a version without it, the client SDK asks again on the next request. A write with a recursive precondition, which needs the v2 API, asks again as well if the client SDK remembered that the server does not offer it, while every other request keeps using what was remembered (see [Checking Preconditions on Subjects Recursively](#checking-preconditions-on-subjects-recursively)). Requests that start at the same time share a single attempt to find out.
 
 Over the v2 API, every read uses the HTTP method `QUERY` ([RFC 10008](https://www.rfc-editor.org/rfc/rfc10008)), so a proxy in front of EventSourcingDB has to let `QUERY` requests through. There is no fallback to `POST`.
 
@@ -189,7 +189,7 @@ end
 
 `IsSubjectPristine` then holds if neither the subject nor any nested subject has an event, `IsSubjectPopulated` if any of them has one, and `IsSubjectOnEventId` if the latest event among all of them has the given ID. With `recursive` set to `false`, the precondition checks the subject alone, as without options.
 
-*Note that checking a precondition recursively requires a server with the v2 API. Against a server without it, the function returns an `EventSourcingDB.Errors.IncompatibleServer` error and writes nothing.*
+*Note that checking a precondition recursively requires a server with the v2 API. If the client SDK remembered that the server does not offer it, it asks the server again first, since the server may have been upgraded meanwhile. If the server still does not offer the v2 API, the function returns an `EventSourcingDB.Errors.IncompatibleServer` error and writes nothing.*
 
 ### Using the `IsEventQLQueryTrue` precondition
 

@@ -1,9 +1,16 @@
 defmodule EventSourcingDBTest.ApiVersion do
-  alias EventSourcingDB.{Client, ManagementEvent, ReadSubjectsOptions}
+  alias EventSourcingDB.{
+    Client,
+    IsSubjectPristine,
+    ManagementEvent,
+    PreconditionOptions,
+    ReadSubjectsOptions
+  }
 
   alias EventSourcingDB.Errors.{
     ConnectionStalled,
     DbApiError,
+    IncompatibleServer,
     InvalidResponseType,
     InvalidServerHeader,
     OutcomeUnknown,
@@ -246,6 +253,129 @@ defmodule EventSourcingDBTest.ApiVersion do
 
         assert Enum.count(received_requests(), &(&1 == {"GET", "/api/v2/system/ping"})) == 2
       end
+    end
+  end
+
+  # A client remembers that its server does not offer the v2 API, while the
+  # server may be upgraded to a version that does. A write that needs the v2
+  # API asks again before it fails for the lack of it.
+  describe "a server that is upgraded to a version with the v2 API" do
+    for options <- [[], [timeout: 5_000]] do
+      @options options
+
+      test "is asked for its API again by a write with a recursive precondition, which then goes through the v2 API, as every later request does (options: #{inspect(options)})" do
+        api = start_supervised!({Agent, fn -> :v1 end}, id: make_ref())
+
+        url =
+          FakeServer.start(fn request ->
+            case Agent.get(api, & &1) do
+              :v1 -> v1_server(request, 404)
+              :v2 -> upgraded_server(request)
+            end
+          end)
+
+        client = client(url)
+        assert EventSourcingDB.verify_api_token(client) == :ok
+
+        Agent.update(api, fn _api -> :v2 end)
+
+        assert EventSourcingDB.verify_api_token(client) == :ok
+
+        assert {:ok, [_event]} =
+                 EventSourcingDB.write_events(
+                   client,
+                   [candidate()],
+                   [recursive_precondition()],
+                   @options
+                 )
+
+        assert EventSourcingDB.verify_api_token(client) == :ok
+
+        requests = received_request_maps()
+
+        assert Enum.map(requests, &{&1.method, &1.path}) == [
+                 {"GET", "/api/v2/system/ping"},
+                 {"POST", "/api/v1/verify-api-token"},
+                 {"POST", "/api/v1/verify-api-token"},
+                 {"GET", "/api/v2/system/ping"},
+                 {"POST", "/api/v2/data/write-events"},
+                 {"POST", "/api/v2/system/verify-token"}
+               ]
+
+        write = Enum.find(requests, &(&1.path == "/api/v2/data/write-events"))
+
+        assert Jason.decode!(write.body)["preconditions"] == [
+                 %{
+                   "type" => "isSubjectPristine",
+                   "payload" => %{"subject" => "/test", "options" => %{"recursive" => true}}
+                 }
+               ]
+      end
+    end
+
+    test "is asked for its API again by every write with a recursive precondition while it does not offer the v2 API, which then fails without being sent" do
+      url = FakeServer.start(&v1_server(&1, 404))
+      client = client(url)
+      assert EventSourcingDB.verify_api_token(client) == :ok
+
+      for _attempt <- 1..2 do
+        assert {:error, %IncompatibleServer{}} =
+                 EventSourcingDB.write_events(client, [candidate()], [recursive_precondition()])
+      end
+
+      assert EventSourcingDB.verify_api_token(client) == :ok
+
+      assert received_requests() == [
+               {"GET", "/api/v2/system/ping"},
+               {"POST", "/api/v1/verify-api-token"},
+               {"GET", "/api/v2/system/ping"},
+               {"GET", "/api/v2/system/ping"},
+               {"POST", "/api/v1/verify-api-token"}
+             ]
+    end
+
+    test "is asked once for concurrent writes with a recursive precondition, which each go through the v2 API once, while every other request keeps the v1 API meanwhile" do
+      test_process = self()
+      api = start_supervised!({Agent, fn -> :v1 end}, id: make_ref())
+
+      url =
+        FakeServer.start(fn request ->
+          case {Agent.get(api, & &1), request} do
+            {:v1, request} -> v1_server(request, 404)
+            {:held_v2, %{path: "/api/v2/system/ping"}} -> held_answer(request, test_process)
+            {:held_v2, request} -> upgraded_server(request)
+          end
+        end)
+
+      client = client(url)
+      assert EventSourcingDB.verify_api_token(client) == :ok
+
+      Agent.update(api, fn _api -> :held_v2 end)
+
+      writes =
+        for _ <- 1..5 do
+          Task.async(fn ->
+            EventSourcingDB.write_events(client, [candidate()], [recursive_precondition()])
+          end)
+        end
+
+      prober = receive_held_probe()
+      await_waiting(client, 4)
+
+      other = Task.async(fn -> EventSourcingDB.verify_api_token(client) end)
+
+      assert Task.yield(other, 5_000) == {:ok, :ok},
+             "a request without a recursive precondition waited for the probe"
+
+      send(prober, :release)
+
+      for write <- writes, do: assert({:ok, [_event]} = Task.await(write))
+
+      assert Enum.frequencies(received_requests()) == %{
+               {"GET", "/api/v2/system/ping"} => 2,
+               {"POST", "/api/v1/verify-api-token"} => 2,
+               {"POST", "/api/v2/data/write-events"} => 5
+             }
     end
   end
 
@@ -554,6 +684,21 @@ defmodule EventSourcingDBTest.ApiVersion do
   # A server without the v2 API answers its routes with 404.
   defp v1_server(%{path: "/api/v2/" <> _route}, _answers), do: {404, "404 page not found\n"}
 
+  # Answers as EventSourcingDB 1.3 does, which offers the v1 API next to the
+  # v2 API.
+  defp upgraded_server(%{path: "/api/v2/" <> _route} = request), do: v2_server(request)
+  defp upgraded_server(request), do: v1_server(request, 404)
+
+  # Holds the request until the test releases it, and then answers it as
+  # EventSourcingDB 1.3 does.
+  defp held_answer(request, test_process) do
+    send(test_process, {:held_probe, self()})
+
+    receive do
+      :release -> upgraded_server(request)
+    end
+  end
+
   # Answers every route of the v2 API with the given status, as a proxy that
   # forwards only the v1 API to a server without the v2 API does, and every
   # other request as that server does.
@@ -636,6 +781,14 @@ defmodule EventSourcingDBTest.ApiVersion do
     end
   end
 
+  defp received_request_maps(requests \\ []) do
+    receive do
+      {:fake_server, :request, request} -> received_request_maps([request | requests])
+    after
+      0 -> Enum.reverse(requests)
+    end
+  end
+
   # The method and the path of every request, together with its Authorization
   # header, or nil without one.
   defp received_authorizations(requests \\ []) do
@@ -653,5 +806,9 @@ defmodule EventSourcingDBTest.ApiVersion do
 
   defp candidate() do
     EventSourcingDBTest.Utils.create_test_eventcandidate("/test", %{"value" => 1})
+  end
+
+  defp recursive_precondition() do
+    %IsSubjectPristine{subject: "/test", options: PreconditionOptions.new(recursive: true)}
   end
 end
