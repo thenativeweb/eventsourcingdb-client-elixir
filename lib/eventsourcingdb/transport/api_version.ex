@@ -29,6 +29,11 @@ defmodule EventSourcingDB.Transport.ApiVersion do
 
   @table __MODULE__
 
+  # The statuses with which a server answers a path of the v2 API if it does
+  # not offer the v2 API. Everything that tells from an answer whether the
+  # server offers it decides by this guard.
+  defguard is_without_v2_api(status) when status in [404, 405]
+
   @type version() :: :v1 | :v2
   @type probe() :: (-> {:ok, version()} | {:error, Exception.t()})
 

@@ -19,6 +19,8 @@ defmodule EventSourcingDB.Transport do
   alias EventSourcingDB.Errors.{DbApiError, InvalidResponseType, PingFailed, TransmissionError}
   alias EventSourcingDB.Transport.{ApiVersion, Deadline, HTTP, V1, V2}
 
+  import ApiVersion, only: [is_without_v2_api: 1]
+
   @probe_path "/api/v2/system/ping"
 
   @spec api(Client.t(), atom(), Deadline.t() | nil) :: {:ok, module()} | {:error, Exception.t()}
@@ -59,7 +61,7 @@ defmodule EventSourcingDB.Transport do
     options = [authorize: false, deadline: deadline] ++ options
 
     case HTTP.unchecked_one_shot(client, :get, @probe_path, nil, options) do
-      {:ok, %Req.Response{status: status}} when status in [404, 405] ->
+      {:ok, %Req.Response{status: status}} when is_without_v2_api(status) ->
         {:ok, :v1}
 
       {:ok, response} ->
