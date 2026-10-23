@@ -3,6 +3,19 @@ defmodule EventSourcingDBTest.TestContainerWait do
   alias Testcontainers.{Container, ContainerBuilder, WaitStrategy}
   use ExUnit.Case, async: true
 
+  import EventSourcingDBTest.Utils
+
+  # Testcontainers waits for the database itself when it starts the
+  # container, as the container macro of Testcontainers.ExUnit does, whether
+  # the server offers the v2 API or not.
+  @tag timeout: container_test_timeout()
+  test "starts the container through Testcontainers once the database answers its ping" do
+    {:ok, esdb} = Testcontainers.start_container(test_container())
+    on_exit(fn -> Testcontainers.stop_container(esdb.container_id) end)
+
+    assert EventSourcingDB.ping(TestContainer.get_client(esdb)) == :ok
+  end
+
   # EventSourcingDB takes a while to start when Docker is busy, so the test
   # container finds it ready whenever it answers its ping within 10 seconds.
   # The test runs the wait of the test container against a local server that
