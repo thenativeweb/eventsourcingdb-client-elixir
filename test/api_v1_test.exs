@@ -5,12 +5,21 @@ defmodule EventSourcingDBTest.ApiV1 do
   alias EventSourcingDB.Errors.{
     ConnectionStalled,
     DbApiError,
+    IncompatibleServer,
     InvalidServerHeader,
     OutcomeUnknown,
     TransmissionError
   }
 
-  alias EventSourcingDB.ReadSubjectsOptions
+  alias EventSourcingDB.{
+    IsEventQLQueryTrue,
+    IsSubjectOnEventId,
+    IsSubjectPopulated,
+    IsSubjectPristine,
+    PreconditionOptions,
+    ReadSubjectsOptions
+  }
+
   alias EventSourcingDB.Transport.ApiVersion
   alias EventSourcingDB.Transport.HTTP
   alias EventSourcingDBTest.{FakeServer, StreamServer}
@@ -222,6 +231,83 @@ defmodule EventSourcingDBTest.ApiV1 do
         end)
 
       assert result == {:ok, ["/"]}
+    end
+  end
+
+  describe "a precondition on a subject" do
+    for {precondition, sent} <- [
+          {%IsSubjectPristine{subject: "/test"},
+           %{"type" => "isSubjectPristine", "payload" => %{"subject" => "/test"}}},
+          {%IsSubjectPopulated{subject: "/test"},
+           %{"type" => "isSubjectPopulated", "payload" => %{"subject" => "/test"}}},
+          {%IsSubjectOnEventId{subject: "/test", event_id: "0"},
+           %{
+             "type" => "isSubjectOnEventId",
+             "payload" => %{"subject" => "/test", "eventId" => "0"}
+           }}
+        ] do
+      @precondition precondition
+      @sent sent
+
+      test "fails a write with #{sent["type"]} with recursive set to true, without sending it" do
+        url = start_v1(fn _request -> {200, "[]"} end)
+        precondition = %{@precondition | options: PreconditionOptions.new(recursive: true)}
+
+        assert {:error, %IncompatibleServer{} = error} =
+                 EventSourcingDB.write_events(client(url), [candidate()], [precondition])
+
+        assert Exception.message(error) ==
+                 "Incompatible server: the server does not offer the v2 API, which a recursive precondition needs."
+
+        refute_received {:fake_server, :request, %{path: "/api/v1/write-events"}}
+      end
+
+      test "is sent without its options for #{sent["type"]} with recursive set to false, which checks the subject alone, as the v1 API does" do
+        url = start_v1(fn _request -> {200, "[]"} end)
+        precondition = %{@precondition | options: PreconditionOptions.new(recursive: false)}
+
+        assert {:ok, []} =
+                 EventSourcingDB.write_events(client(url), [candidate()], [precondition])
+
+        assert_received {:fake_server, :request, %{path: "/api/v1/write-events", body: body}}
+        assert Jason.decode!(body)["preconditions"] == [@sent]
+      end
+    end
+
+    # Only options that are missing, or whose recursive is false, ask for
+    # nothing that the v1 API does not check.
+    for {options, name} <- [
+          {%PreconditionOptions{recursive: "true"}, "recursive set to something else"},
+          {%PreconditionOptions{recursive: nil}, "recursive set to nil"},
+          {%{recursive: true}, "a map with recursive set to true"},
+          {%{recursive: false}, "a map with recursive set to false"}
+        ] do
+      @options options
+
+      test "fails a write with options with #{name}, without sending it" do
+        url = start_v1(fn _request -> {200, "[]"} end)
+        precondition = %IsSubjectPristine{subject: "/test", options: @options}
+
+        assert {:error, %IncompatibleServer{}} =
+                 EventSourcingDB.write_events(client(url), [candidate()], [precondition])
+
+        refute_received {:fake_server, :request, %{path: "/api/v1/write-events"}}
+      end
+    end
+
+    test "fails a write whose recursive precondition follows others, without sending it" do
+      url = start_v1(fn _request -> {200, "[]"} end)
+
+      preconditions = [
+        %IsEventQLQueryTrue{query: "FROM e IN events PROJECT INTO COUNT() == 0"},
+        %IsSubjectPopulated{subject: "/test", options: PreconditionOptions.new(recursive: false)},
+        %IsSubjectPristine{subject: "/test", options: PreconditionOptions.new(recursive: true)}
+      ]
+
+      assert {:error, %IncompatibleServer{}} =
+               EventSourcingDB.write_events(client(url), [candidate()], preconditions)
+
+      refute_received {:fake_server, :request, %{path: "/api/v1/write-events"}}
     end
   end
 

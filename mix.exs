@@ -67,7 +67,8 @@ defmodule EventSourcingDB.MixProject do
           EventSourcingDB.IsEventQLQueryTrue,
           EventSourcingDB.IsSubjectOnEventId,
           EventSourcingDB.IsSubjectPopulated,
-          EventSourcingDB.IsSubjectPristine
+          EventSourcingDB.IsSubjectPristine,
+          EventSourcingDB.PreconditionOptions
         ],
         "Request Options": [
           EventSourcingDB.BoundOptions,

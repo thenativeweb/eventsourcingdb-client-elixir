@@ -12,7 +12,8 @@ defmodule EventSourcingDB.Transport do
   # Anything else, such as a failed connection or a 5xx, fails the request
   # with that error, and leaves the API unknown, so that the next request
   # asks again. For a call with a timeout, the deadline of the call bounds
-  # asking as well.
+  # asking as well. A write with a precondition that only the v2 API checks
+  # asks again if the remembered answer is the v1 API.
 
   alias EventSourcingDB.Client
   alias EventSourcingDB.Errors.{DbApiError, InvalidResponseType, PingFailed, TransmissionError}
@@ -24,12 +25,19 @@ defmodule EventSourcingDB.Transport do
   def api(%Client{} = client, call \\ :other, deadline \\ nil) do
     probe = fn -> probe(client, call, deadline) end
 
-    case ApiVersion.resolve(client, probe, share: deadline == nil) do
+    case ApiVersion.resolve(client, probe, share: deadline == nil, stale: stale(call)) do
       {:ok, :v1} -> {:ok, V1}
       {:ok, :v2} -> {:ok, V2}
       {:error, reason} -> {:error, reason}
     end
   end
+
+  # A write with a precondition that only the v2 API checks asks the server
+  # again whether it offers the v2 API, if the client remembered that it does
+  # not, since the server may have been upgraded since, rather than fail for
+  # the lack of it. Every other call keeps using the remembered API.
+  defp stale(:write_events_needing_v2), do: :v1
+  defp stale(_call), do: nil
 
   # Req retries a GET request after a transient error, as the probe is. Only a
   # ping is a GET request among the calls of the client SDK, so the probe is

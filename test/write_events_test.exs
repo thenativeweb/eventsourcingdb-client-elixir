@@ -1,9 +1,13 @@
 defmodule EventSourcingDBTest.WriteEvents do
   alias EventSourcingDB.ErrorCode
+  alias EventSourcingDB.Errors.IncompatibleServer
+  alias EventSourcingDB.Event
   alias EventSourcingDB.IsEventQLQueryTrue
   alias EventSourcingDB.IsSubjectOnEventId
   alias EventSourcingDB.IsSubjectPopulated
   alias EventSourcingDB.IsSubjectPristine
+  alias EventSourcingDB.PreconditionOptions
+  alias EventSourcingDB.ReadEventsOptions
   alias EventSourcingDB.TestContainer
   import EventSourcingDBTest.Utils
   use ExUnit.Case, async: true
@@ -314,5 +318,211 @@ defmodule EventSourcingDBTest.WriteEvents do
     event = EventSourcingDB.write_events!(client, [event_candidate]) |> Enum.at(0)
 
     assert_event_match_eventcandidate(event, event_candidate)
+  end
+
+  describe "a precondition on a subject with recursive set to true" do
+    # Each test writes the events of its setup, and then writes an event to
+    # /books/42 with the precondition, which checks /books/42 together with
+    # /books/42/pages below it, but not /books/43 next to it.
+
+    test "IsSubjectPristine holds if neither the subject nor any subject below it has an event",
+         %{esdb: esdb} do
+      client = TestContainer.get_client(esdb)
+      setup = write_setup!(client, ["/books/43"])
+
+      result =
+        write_with(client, %IsSubjectPristine{subject: "/books/42", options: recursive(true)})
+
+      assert_recursive(esdb, client, result, setup, :holds)
+    end
+
+    test "IsSubjectPristine does not hold if a subject below it has an event", %{esdb: esdb} do
+      client = TestContainer.get_client(esdb)
+      setup = write_setup!(client, ["/books/42/pages"])
+
+      result =
+        write_with(client, %IsSubjectPristine{subject: "/books/42", options: recursive(true)})
+
+      assert_recursive(esdb, client, result, setup, :violated)
+    end
+
+    test "IsSubjectPopulated holds if a subject below it has an event", %{esdb: esdb} do
+      client = TestContainer.get_client(esdb)
+      setup = write_setup!(client, ["/books/42/pages"])
+
+      result =
+        write_with(client, %IsSubjectPopulated{subject: "/books/42", options: recursive(true)})
+
+      assert_recursive(esdb, client, result, setup, :holds)
+    end
+
+    test "IsSubjectPopulated does not hold if neither the subject nor any subject below it has an event",
+         %{esdb: esdb} do
+      client = TestContainer.get_client(esdb)
+      setup = write_setup!(client, ["/books/43"])
+
+      result =
+        write_with(client, %IsSubjectPopulated{subject: "/books/42", options: recursive(true)})
+
+      assert_recursive(esdb, client, result, setup, :violated)
+    end
+
+    test "IsSubjectOnEventId holds for the latest event among the subject and the subjects below it",
+         %{esdb: esdb} do
+      client = TestContainer.get_client(esdb)
+      [_own, below] = setup = write_setup!(client, ["/books/42", "/books/42/pages"])
+
+      result =
+        write_with(client, %IsSubjectOnEventId{
+          subject: "/books/42",
+          event_id: below.id,
+          options: recursive(true)
+        })
+
+      assert_recursive(esdb, client, result, setup, :holds)
+    end
+
+    test "IsSubjectOnEventId does not hold for the latest event of the subject alone if a subject below it has a later one",
+         %{esdb: esdb} do
+      client = TestContainer.get_client(esdb)
+      [own, _below] = setup = write_setup!(client, ["/books/42", "/books/42/pages"])
+
+      result =
+        write_with(client, %IsSubjectOnEventId{
+          subject: "/books/42",
+          event_id: own.id,
+          options: recursive(true)
+        })
+
+      assert_recursive(esdb, client, result, setup, :violated)
+    end
+  end
+
+  describe "a precondition on a subject with recursive set to false" do
+    # Each test writes the events of its setup, and then writes an event to
+    # /books/42 with the precondition, which checks /books/42 alone, with and
+    # without the v2 API.
+
+    test "IsSubjectPristine holds if only a subject below it has an event", %{esdb: esdb} do
+      client = TestContainer.get_client(esdb)
+      write_setup!(client, ["/books/42/pages"])
+
+      result =
+        write_with(client, %IsSubjectPristine{subject: "/books/42", options: recursive(false)})
+
+      assert_holds(result)
+    end
+
+    test "IsSubjectPristine does not hold if the subject has an event", %{esdb: esdb} do
+      client = TestContainer.get_client(esdb)
+      write_setup!(client, ["/books/42"])
+
+      result =
+        write_with(client, %IsSubjectPristine{subject: "/books/42", options: recursive(false)})
+
+      assert_violated(esdb, result)
+    end
+
+    test "IsSubjectPopulated holds if the subject has an event", %{esdb: esdb} do
+      client = TestContainer.get_client(esdb)
+      write_setup!(client, ["/books/42"])
+
+      result =
+        write_with(client, %IsSubjectPopulated{subject: "/books/42", options: recursive(false)})
+
+      assert_holds(result)
+    end
+
+    test "IsSubjectPopulated does not hold if only a subject below it has an event", %{
+      esdb: esdb
+    } do
+      client = TestContainer.get_client(esdb)
+      write_setup!(client, ["/books/42/pages"])
+
+      result =
+        write_with(client, %IsSubjectPopulated{subject: "/books/42", options: recursive(false)})
+
+      assert_violated(esdb, result)
+    end
+
+    test "IsSubjectOnEventId holds for the latest event of the subject alone", %{esdb: esdb} do
+      client = TestContainer.get_client(esdb)
+      [own, _below] = write_setup!(client, ["/books/42", "/books/42/pages"])
+
+      result =
+        write_with(client, %IsSubjectOnEventId{
+          subject: "/books/42",
+          event_id: own.id,
+          options: recursive(false)
+        })
+
+      assert_holds(result)
+    end
+
+    test "IsSubjectOnEventId does not hold for the latest event of a subject below it", %{
+      esdb: esdb
+    } do
+      client = TestContainer.get_client(esdb)
+      [_own, below] = write_setup!(client, ["/books/42", "/books/42/pages"])
+
+      result =
+        write_with(client, %IsSubjectOnEventId{
+          subject: "/books/42",
+          event_id: below.id,
+          options: recursive(false)
+        })
+
+      assert_violated(esdb, result)
+    end
+  end
+
+  defp recursive(recursive), do: PreconditionOptions.new(recursive: recursive)
+
+  # Writes an event to each of the subjects in a single write, so that the
+  # events follow the order of the subjects.
+  defp write_setup!(client, subjects) do
+    candidates = Enum.map(subjects, &create_test_eventcandidate(&1, %{"value" => 1}))
+    EventSourcingDB.write_events!(client, candidates)
+  end
+
+  defp write_with(client, precondition) do
+    candidate = create_test_eventcandidate("/books/42", %{"value" => 2})
+    EventSourcingDB.write_events(client, [candidate], [precondition])
+  end
+
+  defp assert_holds(result) do
+    assert {:ok, [%Event{subject: "/books/42"}]} = result
+  end
+
+  defp assert_violated(esdb, result) do
+    assert_db_api_error(
+      result,
+      on_api(esdb, v1: 409, v2: 200),
+      ErrorCode.precondition_violated(),
+      "",
+      ["precondition"]
+    )
+  end
+
+  # Checking a precondition recursively needs the v2 API, so against a server
+  # without it, the write fails before it is sent, and the events of the setup
+  # remain the only ones.
+  defp assert_recursive(esdb, client, result, setup, outcome) do
+    case {server_api(esdb), outcome} do
+      {:v2, :holds} ->
+        assert_holds(result)
+
+      {:v2, :violated} ->
+        assert_violated(esdb, result)
+
+      {:v1, _outcome} ->
+        assert {:error, %IncompatibleServer{}} = result
+
+        stored =
+          EventSourcingDB.read_events!(client, "/", %ReadEventsOptions{recursive: true})
+          |> Enum.map(& &1.id)
+
+        assert stored == Enum.map(setup, & &1.id)
+    end
   end
 end

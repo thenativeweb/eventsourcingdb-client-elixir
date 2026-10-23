@@ -9,7 +9,15 @@ defmodule EventSourcingDBTest.ApiV2 do
     TransmissionError
   }
 
-  alias EventSourcingDB.{IsSubjectPristine, ReadEventsOptions, ReadSubjectsOptions}
+  alias EventSourcingDB.{
+    IsSubjectOnEventId,
+    IsSubjectPopulated,
+    IsSubjectPristine,
+    PreconditionOptions,
+    ReadEventsOptions,
+    ReadSubjectsOptions
+  }
+
   alias EventSourcingDB.Transport.HTTP
   alias EventSourcingDBTest.{FakeServer, StreamServer}
   import EventSourcingDBTest.Utils
@@ -147,6 +155,58 @@ defmodule EventSourcingDBTest.ApiV2 do
                  %{"type" => "isSubjectPristine", "payload" => %{"subject" => "/books/42"}}
                ]
              }
+    end
+
+    test "write events with the options of each precondition on a subject that has them" do
+      recursive = PreconditionOptions.new(recursive: true)
+      not_recursive = PreconditionOptions.new(recursive: false)
+
+      {result, request} =
+        run_stream(
+          fn client ->
+            EventSourcingDB.write_events(
+              client,
+              [create_test_eventcandidate("/books/42", %{"value" => 1})],
+              [
+                %IsSubjectPristine{subject: "/books/42", options: recursive},
+                %IsSubjectPopulated{subject: "/books/43", options: not_recursive},
+                %IsSubjectOnEventId{subject: "/books/44", event_id: "7", options: recursive},
+                %IsSubjectPristine{subject: "/books/45"},
+                %IsSubjectPopulated{subject: "/books/46"},
+                %IsSubjectOnEventId{subject: "/books/47", event_id: "8"}
+              ]
+            )
+          end,
+          [event_line("0", "/books/42"), @end_item]
+        )
+
+      assert {:ok, [%Event{id: "0"}]} = result
+      assert {"POST /api/v2/data/write-events HTTP/1.1", body} = request
+
+      assert Jason.decode!(body)["preconditions"] == [
+               %{
+                 "type" => "isSubjectPristine",
+                 "payload" => %{"subject" => "/books/42", "options" => %{"recursive" => true}}
+               },
+               %{
+                 "type" => "isSubjectPopulated",
+                 "payload" => %{"subject" => "/books/43", "options" => %{"recursive" => false}}
+               },
+               %{
+                 "type" => "isSubjectOnEventId",
+                 "payload" => %{
+                   "subject" => "/books/44",
+                   "eventId" => "7",
+                   "options" => %{"recursive" => true}
+                 }
+               },
+               %{"type" => "isSubjectPristine", "payload" => %{"subject" => "/books/45"}},
+               %{"type" => "isSubjectPopulated", "payload" => %{"subject" => "/books/46"}},
+               %{
+                 "type" => "isSubjectOnEventId",
+                 "payload" => %{"subject" => "/books/47", "eventId" => "8"}
+               }
+             ]
     end
 
     test "register an event schema with POST on the v2 route" do

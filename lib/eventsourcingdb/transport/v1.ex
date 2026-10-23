@@ -5,10 +5,18 @@ defmodule EventSourcingDB.Transport.V1 do
 
   @behaviour EventSourcingDB.Transport.API
 
-  alias EventSourcingDB.{ErrorCode, Event, EventType, ManagementEvent, RawJSON}
+  alias EventSourcingDB.{
+    ErrorCode,
+    Event,
+    EventType,
+    ManagementEvent,
+    PreconditionOptions,
+    RawJSON
+  }
 
   alias EventSourcingDB.Errors.{
     DbApiError,
+    IncompatibleServer,
     InvalidEventType,
     InvalidResponseType,
     PingFailed,
@@ -46,8 +54,21 @@ defmodule EventSourcingDB.Transport.V1 do
     end
   end
 
+  # The v1 API knows no options for a precondition, and checks every
+  # precondition on the subject alone. So a precondition with recursive set to
+  # false is sent without its options, while one that needs the v2 API can
+  # not be checked at all, and fails the write before it is sent, rather than
+  # check less than it asks for.
   @impl true
   def write_events(client, events, preconditions, deadline) do
+    if Enum.any?(preconditions, &PreconditionOptions.needs_v2_api?/1) do
+      {:error, %IncompatibleServer{}}
+    else
+      send_events(client, events, Enum.map(preconditions, &without_options/1), deadline)
+    end
+  end
+
+  defp send_events(client, events, preconditions, deadline) do
     body = %{events: events, preconditions: preconditions}
 
     client
@@ -56,6 +77,9 @@ defmodule EventSourcingDB.Transport.V1 do
     |> then(fn result -> with {:ok, text} <- result, do: written_events(text) end)
     |> WriteOutcome.classify(:v1)
   end
+
+  defp without_options(%{options: _options} = precondition), do: %{precondition | options: nil}
+  defp without_options(precondition), do: precondition
 
   # Each event keeps the text of its data as it arrived, for verifying its
   # hash. Should the texts not match the events, the events verify their hash
