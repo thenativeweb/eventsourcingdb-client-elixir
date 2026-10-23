@@ -189,6 +189,28 @@ defmodule EventSourcingDB do
 
   *Note that according to the CloudEvents standard, event IDs must be of type string.*
 
+  ### Checking Preconditions on Subjects Recursively
+
+  By default, the `IsSubjectPristine`, `IsSubjectPopulated`, and `IsSubjectOnEventId` preconditions check the subject alone. If you want them to check not only the subject, but also all nested subjects, pass `PreconditionOptions` with the `recursive` option set to `true`:
+
+  ```elixir
+  case EventSourcingDB.write_events(
+    client,
+    [event],
+    [%EventSourcingDB.IsSubjectPristine{
+      subject: "/books/42",
+      options: EventSourcingDB.PreconditionOptions.new(recursive: true)
+    }]
+  ) do
+    {:ok, events} -> # ...
+    {:error, reason} -> # ...
+  end
+  ```
+
+  `IsSubjectPristine` then holds if neither the subject nor any nested subject has an event, `IsSubjectPopulated` if any of them has one, and `IsSubjectOnEventId` if the latest event among all of them has the given ID. With `recursive` set to `false`, the precondition checks the subject alone, as without options.
+
+  *Note that checking a precondition recursively requires a server with the v2 API. Against a server without it, the function returns an `EventSourcingDB.Errors.IncompatibleServer` error and writes nothing.*
+
   ### Using the `IsEventQLQueryTrue` precondition
 
   If you want to write events depending on an EventQL query, use the `IsEventQLQueryTrue` precondition:

@@ -6,23 +6,29 @@ defmodule EventSourcingDB.IsSubjectOnEventId do
   event. This lets you check that no new events have been added since you last
   read the subject – essentially enabling **optimistic locking** on a **per-subject
   basis**.
+
+  With `options` whose `recursive` is `true` (see
+  `EventSourcingDB.PreconditionOptions`), the ID must be that of the most recent
+  event among the subject and all subjects nested under it.
   """
   use TypedStruct
 
   typedstruct do
     field :subject, String.t(), enforce: true
     field :event_id, String.t(), enforce: true
+    field :options, EventSourcingDB.PreconditionOptions.t()
   end
 
   defimpl Jason.Encoder do
+    alias EventSourcingDB.PreconditionOptions
+
     def encode(value, opts) do
+      payload = %{"subject" => value.subject, "eventId" => value.event_id}
+
       Jason.Encode.map(
         %{
           "type" => "isSubjectOnEventId",
-          "payload" => %{
-            "subject" => value.subject,
-            "eventId" => value.event_id
-          }
+          "payload" => PreconditionOptions.add_to_payload(payload, value.options)
         },
         opts
       )
