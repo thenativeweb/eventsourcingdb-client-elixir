@@ -31,4 +31,16 @@ defmodule EventSourcingDB.PreconditionOptions do
   @spec add_to_payload(map(), t() | nil) :: map()
   def add_to_payload(payload, nil), do: payload
   def add_to_payload(payload, options), do: Map.put(payload, "options", options)
+
+  # Whether only the v2 API checks the precondition as it asks. The v1 API
+  # checks every precondition on the subject alone, which is what a
+  # precondition without options, or with recursive set to false, asks for,
+  # so every other options need the v2 API, even ones that are not valid,
+  # rather than be checked on the subject alone without notice.
+  @doc false
+  @spec needs_v2_api?(struct()) :: boolean()
+  def needs_v2_api?(%{options: nil}), do: false
+  def needs_v2_api?(%{options: %__MODULE__{recursive: false}}), do: false
+  def needs_v2_api?(%{options: _options}), do: true
+  def needs_v2_api?(_precondition), do: false
 end

@@ -5,7 +5,14 @@ defmodule EventSourcingDB.Transport.V1 do
 
   @behaviour EventSourcingDB.Transport.API
 
-  alias EventSourcingDB.{ErrorCode, Event, EventType, ManagementEvent, RawJSON}
+  alias EventSourcingDB.{
+    ErrorCode,
+    Event,
+    EventType,
+    ManagementEvent,
+    PreconditionOptions,
+    RawJSON
+  }
 
   alias EventSourcingDB.Errors.{
     DbApiError,
@@ -49,12 +56,12 @@ defmodule EventSourcingDB.Transport.V1 do
 
   # The v1 API knows no options for a precondition, and checks every
   # precondition on the subject alone. So a precondition with recursive set to
-  # false is sent without its options, while one with recursive set to true
-  # can not be checked at all, and fails the write before it is sent, rather
-  # than check less than it asks for.
+  # false is sent without its options, while one that needs the v2 API can
+  # not be checked at all, and fails the write before it is sent, rather than
+  # check less than it asks for.
   @impl true
   def write_events(client, events, preconditions, deadline) do
-    if Enum.any?(preconditions, &recursive?/1) do
+    if Enum.any?(preconditions, &PreconditionOptions.needs_v2_api?/1) do
       {:error, %IncompatibleServer{}}
     else
       send_events(client, events, Enum.map(preconditions, &without_options/1), deadline)
@@ -70,9 +77,6 @@ defmodule EventSourcingDB.Transport.V1 do
     |> then(fn result -> with {:ok, text} <- result, do: written_events(text) end)
     |> WriteOutcome.classify(:v1)
   end
-
-  defp recursive?(%{options: %{recursive: true}}), do: true
-  defp recursive?(_precondition), do: false
 
   defp without_options(%{options: _options} = precondition), do: %{precondition | options: nil}
   defp without_options(precondition), do: precondition

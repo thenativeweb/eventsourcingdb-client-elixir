@@ -12,6 +12,7 @@ defmodule EventSourcingDBTest.ApiV1 do
   }
 
   alias EventSourcingDB.{
+    IsEventQLQueryTrue,
     IsSubjectOnEventId,
     IsSubjectPopulated,
     IsSubjectPristine,
@@ -271,6 +272,42 @@ defmodule EventSourcingDBTest.ApiV1 do
         assert_received {:fake_server, :request, %{path: "/api/v1/write-events", body: body}}
         assert Jason.decode!(body)["preconditions"] == [@sent]
       end
+    end
+
+    # Only options that are missing, or whose recursive is false, ask for
+    # nothing that the v1 API does not check.
+    for {options, name} <- [
+          {%PreconditionOptions{recursive: "true"}, "recursive set to something else"},
+          {%PreconditionOptions{recursive: nil}, "recursive set to nil"},
+          {%{recursive: true}, "a map with recursive set to true"},
+          {%{recursive: false}, "a map with recursive set to false"}
+        ] do
+      @options options
+
+      test "fails a write with options with #{name}, without sending it" do
+        url = start_v1(fn _request -> {200, "[]"} end)
+        precondition = %IsSubjectPristine{subject: "/test", options: @options}
+
+        assert {:error, %IncompatibleServer{}} =
+                 EventSourcingDB.write_events(client(url), [candidate()], [precondition])
+
+        refute_received {:fake_server, :request, %{path: "/api/v1/write-events"}}
+      end
+    end
+
+    test "fails a write whose recursive precondition follows others, without sending it" do
+      url = start_v1(fn _request -> {200, "[]"} end)
+
+      preconditions = [
+        %IsEventQLQueryTrue{query: "FROM e IN events PROJECT INTO COUNT() == 0"},
+        %IsSubjectPopulated{subject: "/test", options: PreconditionOptions.new(recursive: false)},
+        %IsSubjectPristine{subject: "/test", options: PreconditionOptions.new(recursive: true)}
+      ]
+
+      assert {:error, %IncompatibleServer{}} =
+               EventSourcingDB.write_events(client(url), [candidate()], preconditions)
+
+      refute_received {:fake_server, :request, %{path: "/api/v1/write-events"}}
     end
   end
 
