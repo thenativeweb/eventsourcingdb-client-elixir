@@ -1,6 +1,8 @@
 defmodule EventSourcingDBTest.ApiVersion do
   alias EventSourcingDB.{
     Client,
+    IsEventQLQueryTrue,
+    IsSubjectPopulated,
     IsSubjectPristine,
     ManagementEvent,
     PreconditionOptions,
@@ -331,6 +333,26 @@ defmodule EventSourcingDBTest.ApiVersion do
                {"GET", "/api/v2/system/ping"},
                {"GET", "/api/v2/system/ping"},
                {"POST", "/api/v1/verify-api-token"}
+             ]
+    end
+
+    test "is not asked again by a write whose preconditions the v1 API checks, which keeps using the v1 API" do
+      url = FakeServer.start(&v1_server(&1, 404))
+      client = client(url)
+      assert EventSourcingDB.verify_api_token(client) == :ok
+
+      preconditions = [
+        %IsSubjectPristine{subject: "/test", options: PreconditionOptions.new(recursive: false)},
+        %IsSubjectPopulated{subject: "/test"},
+        %IsEventQLQueryTrue{query: "FROM e IN events PROJECT INTO COUNT() == 0"}
+      ]
+
+      assert {:ok, [_event]} = EventSourcingDB.write_events(client, [candidate()], preconditions)
+
+      assert received_requests() == [
+               {"GET", "/api/v2/system/ping"},
+               {"POST", "/api/v1/verify-api-token"},
+               {"POST", "/api/v1/write-events"}
              ]
     end
 

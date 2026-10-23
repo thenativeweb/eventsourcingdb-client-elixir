@@ -7,11 +7,13 @@ defmodule EventSourcingDB.Transport.WriteOutcome do
   # write halfway, so a write whose answer is lost may have been stored
   # completely.
   #
-  # A write was certainly not stored only if the connection could not be
-  # established at all, or if the server refused it explicitly. Everything
-  # else leaves the outcome open: a stall, a broken connection after
-  # connecting, a stream of the v2 API that ends without its end item, a 500,
-  # a 502 or 504, or any answer that is not from an EventSourcingDB.
+  # A write that the client SDK sent, or tried to send, was certainly not
+  # stored only if the connection could not be established at all, or if the
+  # server refused it explicitly. Everything else leaves the outcome open: a
+  # stall, a broken connection after connecting, a stream of the v2 API that
+  # ends without its end item, a 500, a 502 or 504, or any answer that is not
+  # from an EventSourcingDB. A write that the client SDK refuses itself,
+  # before sending it, never gets here.
 
   alias EventSourcingDB.ErrorCode
   alias EventSourcingDB.Errors.{DbApiError, OutcomeUnknown}
