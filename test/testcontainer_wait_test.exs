@@ -153,21 +153,20 @@ defmodule EventSourcingDBTest.TestContainerWait do
 
     url =
       FakeServer.start(fn %{path: path} ->
-        answer =
-          Agent.get_and_update(remaining, fn answers ->
-            case Map.get(answers, path, [404]) do
-              [answer] -> {answer, answers}
-              [answer | rest] -> {answer, Map.put(answers, path, rest)}
-            end
-          end)
-
-        case answer do
+        case Agent.get_and_update(remaining, &next_answer(&1, path)) do
           :silent -> :silent
           status -> {status, ""}
         end
       end)
 
     URI.parse(url).port
+  end
+
+  defp next_answer(answers, path) do
+    case Map.get(answers, path, [404]) do
+      [answer] -> {answer, answers}
+      [answer | rest] -> {answer, Map.put(answers, path, rest)}
+    end
   end
 
   # The paths that the server received so far, in order.
