@@ -15,7 +15,6 @@ defmodule EventSourcingDB.Transport.WriteOutcome do
   # from an EventSourcingDB. A write that the client SDK refuses itself,
   # before sending it, never gets here.
 
-  alias EventSourcingDB.ErrorCode
   alias EventSourcingDB.Errors.{DbApiError, OutcomeUnknown}
 
   # The statuses with which the v2 API refuses a request before it stores
@@ -42,8 +41,11 @@ defmodule EventSourcingDB.Transport.WriteOutcome do
   def classify(result, _api), do: result
 
   # A domain error of the v2 API, which arrives at status 200, refuses the
-  # write, except for store-failed, with which the store itself failed.
-  defp refused?(%DbApiError{status: 200, code: code}, :v2), do: code != ErrorCode.store_failed()
+  # write. This holds for store-failed as well, with which a store that has
+  # failed before refuses every write until the server is restarted. A write
+  # during which storing fails gets no error item, but a 500, or a stream that
+  # ends without its end item, so its outcome stays open.
+  defp refused?(%DbApiError{status: 200}, :v2), do: true
   defp refused?(%DbApiError{status: status}, :v2), do: status in @v2_refusals
   defp refused?(%DbApiError{status: status}, :v1), do: status in 400..499 or status in [503, 507]
   defp refused?(_reason, _api), do: false

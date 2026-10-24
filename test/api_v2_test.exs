@@ -43,7 +43,7 @@ defmodule EventSourcingDBTest.ApiV2 do
     "type" => "error",
     "data" => %{
       "code" => "https://docs.eventsourcingdb.io/errors/store-failed",
-      "description" => "store failed",
+      "description" => "store has failed: it refuses writes until it is restarted",
       "details" => %{}
     }
   }
@@ -450,7 +450,7 @@ defmodule EventSourcingDBTest.ApiV2 do
     for call <- [:write_events, :register_event_schema] do
       @call call
 
-      test "is that #{call} was not stored if the server reports an error other than store-failed" do
+      test "is that #{call} was not stored if the server reports an error" do
         url =
           start_v2(fn _request -> {:lines, [@heartbeat, @precondition_violated, @end_item]} end)
 
@@ -458,12 +458,10 @@ defmodule EventSourcingDBTest.ApiV2 do
         assert code == ErrorCode.precondition_violated()
       end
 
-      test "is unknown for #{call} if the server reports store-failed" do
+      test "is that #{call} was not stored if the server reports store-failed" do
         url = start_v2(fn _request -> {:lines, [@heartbeat, @store_failed, @end_item]} end)
 
-        assert {:error, %OutcomeUnknown{cause: %DbApiError{status: 200, code: code}}} =
-                 write(@call, client(url))
-
+        assert {:error, %DbApiError{status: 200, code: code}} = write(@call, client(url))
         assert code == ErrorCode.store_failed()
       end
 
