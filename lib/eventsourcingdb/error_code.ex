@@ -38,6 +38,8 @@ defmodule EventSourcingDB.ErrorCode do
   @slugs ~w(
     subject-missing
     subject-malformed
+    subject-too-long
+    subject-too-deep
     order-unknown
     event-id-missing
     event-id-malformed
@@ -67,6 +69,7 @@ defmodule EventSourcingDB.ErrorCode do
     event-schema-missing
     event-schema-malformed
     event-schema-not-object
+    event-schema-too-complex
     event-schema-already-registered
     last-audited-event-missing
     last-audited-event-mismatched
@@ -86,10 +89,16 @@ defmodule EventSourcingDB.ErrorCode do
     backup-increment-disconnected
     backup-failed
     backup-unreadable
+    backup-ahead-of-clock
+    import-ahead-of-clock
+    import-malformed
+    import-unreadable
     event-too-large
     data-malformed
     query-missing
     query-malformed
+    query-too-deep
+    query-too-long
     query-unevaluable
     query-not-boolean
     precondition-violated
@@ -100,6 +109,7 @@ defmodule EventSourcingDB.ErrorCode do
     store-failed
     indexes-rebuilding
     server-shutting-down
+    file-unreadable
   )
 
   for slug <- @slugs do
