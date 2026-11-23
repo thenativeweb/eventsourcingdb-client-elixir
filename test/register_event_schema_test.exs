@@ -45,7 +45,7 @@ defmodule EventSourcingDBTest.RegisterEventSchema do
 
     result =
       client
-      |> EventSourcingDB.register_event_schema("io.eventsourcingdb.test", %{"x" => "csie"})
+      |> EventSourcingDB.register_event_schema("io.eventsourcingdb.test", %{"type" => "array"})
 
     assert_db_api_error(
       result,
